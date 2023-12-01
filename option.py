@@ -11,6 +11,8 @@ parser.add_argument("--epoch_step", type=int, default=20, help="epochs after whi
 parser.add_argument("--start_epoch", type=int, default=0, help="starting point")
 parser.add_argument("--max_epochs", type=int, default=80, help="total epochs to run")
 parser.add_argument("--loss", default="L2", help="loss function")
+parser.add_argument("--val-each", type=int, default='5', help='Validation each n epochs')
+parser.add_argument("--weight", help='Weight path')
 
 parser.add_argument("--optimizer", default="SGD", help="optimizer")
 #--sgd
@@ -37,7 +39,7 @@ parser.add_argument("--checkpoint", default=None, help="checkpoint to load core 
 parser.add_argument("--eval_tag", default="psnr", help="evaluation tag; available: \"psnr, ssim\"")
 
 #output
-parser.add_argument("--cv_dir", default="backup/nobias_test/", help="checkpoint directory (models and logs are saved here)")
+parser.add_argument("--cv_dir", default="checkpoints", help="checkpoint directory (models and logs are saved here)")
 
 #template
 parser.add_argument("--template", default=None)

@@ -1,2 +1,4 @@
 backup/
 __pycache__/
+wandb/
+checkpoints/
