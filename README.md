@@ -1,7 +1,8 @@
 # Super-Resolution Baselines
 
 - All baseline source code can be found [here](./model/baselines/)
-
+- To adjust the configuration of baselines, please refer to [template](./template/train_baseline.py)
+- For training script, refer to [scripts](./scripts/)
 
 ## Updates
 ### 02-12-2023
