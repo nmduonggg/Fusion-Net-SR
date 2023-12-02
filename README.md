@@ -1,32 +1,24 @@
-# syntorch
- sr and mask training on pytorch
- 
-Ref models:
-[https://drive.google.com/drive/folders/1uSCfpc1W3IppaoU-NM9bZtVnT3E94oZK?usp=sharing](https://drive.google.com/drive/folders/1uSCfpc1W3IppaoU-NM9bZtVnT3E94oZK?usp=sharing)
+# Super-Resolution Baselines
 
-Dataset:
-[https://drive.google.com/drive/folders/10UEK2L5AxIZUD3Cw1FKPLOXUi4uHIHoV?usp=sharing](https://drive.google.com/drive/folders/10UEK2L5AxIZUD3Cw1FKPLOXUi4uHIHoV?usp=sharing)
+- All baseline source code can be found [here](./model/baselines/)
 
-## Commands:
 
-### Testing
-python test_random_gradso.py --template FusionNet_7_2s_1 --checkpoint <model_name>
+## Updates
+### 02-12-2023
+- Finish EDSR, RCAN, DGNet - based network.
+- Train EDSR, RCAN succesfully, not test with DGNet yet.
+- Not implement SMSR-like network yet
+- All networks follow a similar archintecture: Hourglass architecture with diffent body blocks (Residual + Attention)
+![Hourglas](./assets/hourglass.png) 
+- Training results:
 
-### Training
-for training C branch with SR and S branch with KD loss:
+    | **Network** | **PSNR** | **FLOPs** |
+    |-------------|----------|-----------|
+    | EDSR        | 32.34    |           |
+    | RCAN        | 33.34    |           |
+    | DGNet       |          |           |
+    | SMSR        |          |           |
 
-python train_C_sr_S_kd.py --template <template_name>
 
-ex: python train_C_sr_S_kd.py --template FusionNet_7_2s_1
-
-for training C branch with SR and S branch with SR+KD loss:
-
-python train_C_sr_S_sr_kd.py --template <template_name>
-
-ex: python train_C_sr_S_sr_kd.py --template FusionNet_7_2s_1
-
-if C branch checkpoint is already available, you can skip training C with the option "--skip-C"
-
-ex: python train_C_sr_S_sr_kd.py --template FusionNet_7_2s_1 --checkpoint backup/ref_model/FusionNet_7_2s_branch_0_ckpt_E_300_P_32.778.t7 --skip-C
-
-All template names can be found in *.py in "template/"
+- Comments: 
+    - Significant gap between EDSR and RCAN might be the difference in number of parameters. The current baseline setup lets RCAN parameters higher than EDSR.
