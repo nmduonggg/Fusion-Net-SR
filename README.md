@@ -5,6 +5,24 @@
 - For training script, refer to [scripts](./scripts/)
 
 ## Updates
+
+### 09-12-2023
+- Finish SMSR, and test pipeline of DGNet, SMSR
+- The training pipeline of SMSR has some problem since the original implementation does not considered the case that channel mask will be all spares or dense -> Fix this later
+- Training results:
+
+    | **Network** | **PSNR** | **FLOPs** |
+    |-------------|----------|-----------|
+    | EDSR        | 32.34    |           |
+    | RCAN        | 33.34    |           |
+    | DGNet       | 33.08    |           |
+    | SMSR        |          |           |
+
+- Next plan:
+    - Fix pipeline of SMSR, use customed version of SMSR
+    - Adjust the number of RCAN's parameters to be balance with others
+    - Calculate FLOPs function
+    
 ### 02-12-2023
 - Finish EDSR, RCAN, DGNet - based network.
 - Train EDSR, RCAN succesfully, not test with DGNet yet.

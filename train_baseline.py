@@ -58,15 +58,6 @@ if not os.path.exists(out_dir):
 
 # training
 def train():
-    
-    # init wandb
-    wandb.init(
-        project='Fusion-Net',
-        group='baselines',
-        name=name, 
-        entity='nmduonggg'
-    )
-    
     best_perf = 0.0 # psnr
     
     for epoch in range(epochs):
@@ -91,9 +82,6 @@ def train():
         total_loss /= len(XYtrain)
         perf = torch.stack(perfs, 0).mean()
         
-        track_dict['train_loss'] = total_loss
-        track_dict['train_perf'] = perf
-        
         if (epoch+1) % args.val_each == 0:
             perf_fs = []
             total_val_loss = 0.0
@@ -113,9 +101,6 @@ def train():
             mean_perf_f = torch.stack(perf_fs, 0).mean()
             total_val_loss /= len(XYtest)
             
-            track_dict['val_loss'] = total_val_loss
-            track_dict['val_perf'] = mean_perf_f
-
             log_str = f'[INFO] Epoch {epoch} - Val P: {mean_perf_f:.3f} - Val L: {total_val_loss}'
             print(log_str)
             torch.save(core.state_dict(), os.path.join(out_dir, f'E_%d_P_%.3f.t7' % (epoch, mean_perf_f)))
@@ -124,12 +109,9 @@ def train():
                 best_perf = mean_perf_f
                 torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
                 print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))
-                track_dict['best_perf'] = best_perf
-        track_dict['lr'] = optimizer.param_groups[0]['lr']    
         
         log_str = '[INFO] E: %d | P: %.3f | LOSS: %.3f' % (epoch, perf, total_loss)
         print(log_str)
-        wandb.log(track_dict)
         
 if __name__ == '__main__':
     train()

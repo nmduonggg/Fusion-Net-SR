@@ -14,7 +14,7 @@ class EDSR(nn.Module):
             nn.Conv2d(64, 32, 1, 1, 0)
         )
         self.body = nn.Sequential(*[
-            ResBlock(32, 3, 1, 1) for _ in range(25) 
+            ResBlock(32, 3, 1, 1) for _ in range(4) 
         ])
         self.tails = nn.Sequential(UpSampler(32), nn.Conv2d(32, 1, 1, 1, 0))
         
@@ -50,11 +50,9 @@ class UpSampler(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(n_features, 4*n_features, 3, 1, 1, bias=bias)
         self.shuffler = nn.PixelShuffle(2)
-        self.relu = nn.ReLU(inplace=True)
         
     def forward(self, x):
         x = self.conv1(x)
         x = self.shuffler(x)
-        x = self.relu(x)
         return x
         

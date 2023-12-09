@@ -21,10 +21,11 @@ class DGNet(nn.Module):
         )
         # body
         self.body = nn.Sequential(*[
-            BasicBlock(32, self.h, self.w, self.block_h, self.block_w) for _ in range(25)\
+            BasicBlock(32, 2) for _ in range(4)\
         ])
         # tail
-        self.tails = nn.Sequential(UpSampler(32), nn.Conv2d(32, 1, 1, 1, 0))
+        self.tails = nn.Sequential(
+            UpSampler(32), nn.Conv2d(32, 1, 1, 1, 0))
     
     def forward(self, x):
         x = self.heads(x)
@@ -33,7 +34,7 @@ class DGNet(nn.Module):
         return x
         
 class BasicBlock(nn.Module):
-    def __init__(self, channels, h, w, block_h, block_w):
+    def __init__(self, channels, t):
         super(BasicBlock, self).__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(channels, channels, 3, 1, 1),
@@ -43,13 +44,13 @@ class BasicBlock(nn.Module):
             nn.Conv2d(channels, channels, 3, 1, 1),
             nn.BatchNorm2d(channels))
         self.mask_c = ChannelAttention(channels, channels)
-        self.mask_s = SpatialAttention(h, w, channels, block_h, block_w)
-        self.upsampler = nn.Upsample(size=[h, w], mode='nearest')
+        self.mask_s = SpatialAttention(channels, t)
     
     def forward(self, x):
+        B, C, H, W = x.size()
         residual = x
         masked_c, _, _ = self.mask_c(x)
-        masked_s = self.upsampler(self.mask_s(x)[0])
+        masked_s = F.interpolate(self.mask_s(x)[0], size=[H, W], mode='nearest')
         x = self.conv1(x)
         x = x * masked_c * masked_s if not self.training else x * masked_c
         x = self.conv2(x)
@@ -63,12 +64,10 @@ class UpSampler(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(n_features, 4*n_features, 3, 1, 1, bias=bias)
         self.shuffler = nn.PixelShuffle(2)
-        self.relu = nn.ReLU(inplace=True)
         
     def forward(self, x):
         x = self.conv1(x)
         x = self.shuffler(x)
-        x = self.relu(x)
         return x
         
 class GumbelSoftmax(nn.Module):
@@ -81,7 +80,7 @@ class GumbelSoftmax(nn.Module):
         self.sigmoid = nn.Sigmoid()
         
     def gumbel_sample(self, template_tensor, eps=1e-8):
-        uniform_samples_tensor = template_tensor.clone.uniform_()
+        uniform_samples_tensor = template_tensor.clone().uniform_()
         gumbel_samples_tensor = torch.log(uniform_samples_tensor+eps) - torch.log(1-uniform_samples_tensor+eps)
         return gumbel_samples_tensor
     
@@ -102,21 +101,16 @@ class GumbelSoftmax(nn.Module):
         out_soft, prob_soft = self.gumbel_softmax(logits)
         out_hard = ((out_soft >= 0.5).float() - out_soft).detach() + out_soft
         return out_hard
-
-
 class SpatialAttention(nn.Module):
     '''
         Spatial Attention.
     '''
-    def __init__(self, h, w, planes, block_w, block_h, eps=0.66667,
+    def __init__(self, channels, t, eps=0.66667,
                  bias=-1, **kwargs):
         super(SpatialAttention, self).__init__()
-        # Parameter
-        self.width, self.height, self.channel = w, h, planes
-        self.mask_h, self.mask_w = int(np.ceil(h / block_h)), int(np.ceil(w / block_w))
-        self.eleNum_s = torch.Tensor([self.mask_h*self.mask_w])
         # spatial attention
-        self.atten_s = nn.Conv2d(planes, 1, kernel_size=3, stride=1, bias=bias>=0, padding=1)
+        self.tile_size = t
+        self.atten_s = nn.Conv2d(channels, 1, kernel_size=3, stride=1, bias=bias>=0, padding=1)
         if bias>=0:
             nn.init.constant_(self.atten_s.bias, bias)
         # Gate
@@ -125,22 +119,19 @@ class SpatialAttention(nn.Module):
         self.norm = lambda x: torch.norm(x, p=1, dim=(1,2,3))
     
     def forward(self, x):
-        batch, channel, height, width = x.size()
         # Pooling
-        input_ds = F.adaptive_avg_pool2d(input=x, output_size=(self.mask_h, self.mask_w))
+        input_ds = F.adaptive_avg_pool2d(input=x, output_size=(self.tile_size, self.tile_size))
         # spatial attention
         s_in = self.atten_s(input_ds) # [N, 1, h, w]
         # spatial gate
         mask_s = self.gate_s(s_in) # [N, 1, h, w]
         # norm
         norm = self.norm(mask_s)
-        norm_t = self.eleNum_s.to(x.device)
-        return mask_s, norm, norm_t
+        return mask_s, norm
     
     def get_flops(self):
         flops = self.mask_h * self.mask_w * self.channel * 9
         return flops
-
 
 class ChannelAttention(nn.Module):
     '''

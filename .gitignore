@@ -2,3 +2,5 @@ backup/
 __pycache__/
 wandb/
 checkpoints/
+train_baseline_wandb.py
+scripts_wandb/

@@ -19,8 +19,8 @@ class RCAN(nn.Module):
         
         # body
         res_groups = []
-        for _ in range(10):
-            res_groups.append(ResidualGroup(32, reduction=4, num_rcab=20))
+        for _ in range(4):
+            res_groups.append(ResidualGroup(32, reduction=4, num_rcab=4))
         self.body = nn.Sequential(*res_groups)
         
         # after the extractor, reconnect a layer of conv blocks
