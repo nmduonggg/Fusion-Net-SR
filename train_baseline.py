@@ -58,20 +58,30 @@ if not os.path.exists(out_dir):
 
 # training
 def train():
+    
     best_perf = 0.0 # psnr
     
     for epoch in range(epochs):
         total_loss = 0.0
         perfs = []
-        track_dict = {}
-        
+        core.train()
         for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtrain), total=len(XYtrain)):
             x  = x.cuda()
             yt = yt.cuda()
-            yf = core(x)
+            out = core(x)
+            if type(out) is not list:
+                yf = out
+            else:
+                yf, sparsity = out  # smsr case
+                
             perf = evaluation.calculate(args, yf, yt)
-            train_loss = loss_func(yf, yt)
             
+            train_loss = loss_func(yf, yt)
+            if type(out) is list:
+                sparsity_loss = sparsity.mean()
+                lambda_sparsity = min((epoch / 50), 1) * 0.05                  
+                train_loss = train_loss + sparsity_loss*lambda_sparsity
+                
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
@@ -86,12 +96,18 @@ def train():
             perf_fs = []
             total_val_loss = 0.0
             #walk through the test set
+            core.eval()
             for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
                 x  = x.cuda()
                 yt = yt.cuda()
 
                 with torch.no_grad():
-                    yf = core(x)
+                    out = core(x)
+                
+                if type(out) is not list:
+                    yf = out
+                else:
+                    yf, sparsity = out
                 
                 val_loss = loss_func(yf, yt).item()
                 total_val_loss += val_loss
@@ -100,7 +116,7 @@ def train():
 
             mean_perf_f = torch.stack(perf_fs, 0).mean()
             total_val_loss /= len(XYtest)
-            
+
             log_str = f'[INFO] Epoch {epoch} - Val P: {mean_perf_f:.3f} - Val L: {total_val_loss}'
             print(log_str)
             torch.save(core.state_dict(), os.path.join(out_dir, f'E_%d_P_%.3f.t7' % (epoch, mean_perf_f)))
@@ -109,7 +125,7 @@ def train():
                 best_perf = mean_perf_f
                 torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
                 print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))
-        
+           
         log_str = '[INFO] E: %d | P: %.3f | LOSS: %.3f' % (epoch, perf, total_loss)
         print(log_str)
         

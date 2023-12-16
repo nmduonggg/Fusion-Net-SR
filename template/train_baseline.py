@@ -26,10 +26,9 @@ def set_template(args):
 		args.lr=1e-4
 		args.lr_decay_ratio=0.5
 		args.weight_decay=0
-		args.batch_size=128
+		args.batch_size=64
 		args.epoch_step=100
 		args.val_each=2
-		args.weight='checkpoints/RCAN/RCAN_best.t7'
 		args.max_epochs=300
 		args.loss='L1'
 		args.max_load=0
@@ -67,7 +66,7 @@ def set_template(args):
 		args.lr=1e-4
 		args.lr_decay_ratio=0.5
 		args.weight_decay=0
-		args.batch_size=128
+		args.batch_size=256
 		args.epoch_step=100
 		args.val_each=2
 		args.max_epochs=300

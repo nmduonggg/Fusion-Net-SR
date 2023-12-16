@@ -1,7 +1,7 @@
 from .edsr import EDSR
 from .rcan import RCAN
 from .dgnet import DGNet
-from .smsr import SMSR
+from .smsr_v2 import SMSR
 
 def config(args):
     arch = args.core.split("-")
