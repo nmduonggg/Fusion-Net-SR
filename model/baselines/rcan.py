@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Dict
 from torch import Tensor
-from .utils import residual_stack
+
 
 class RCAN(nn.Module):
     """
@@ -113,3 +113,7 @@ class UpSampler(nn.Module):
 
         return x
 
+if __name__=='__main__':
+    from utils import calc_flops
+    model = RCAN(2)
+    calc_flops(model)

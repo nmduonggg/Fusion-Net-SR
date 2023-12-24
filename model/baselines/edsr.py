@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from typing import Dict
 from torch import Tensor
-from .utils import residual_stack
 
 class EDSR(nn.Module):
     def __init__(self, scale:int=2):
@@ -55,4 +54,8 @@ class UpSampler(nn.Module):
         x = self.conv1(x)
         x = self.shuffler(x)
         return x
-        
+    
+if __name__=='__main__':
+    from utils import calc_flops
+    model = EDSR(2)
+    calc_flops(model)

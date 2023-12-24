@@ -9,5 +9,10 @@ def calculate(args, y, yt):
     else:
         print('[ERRO] unknown evaluation tag')
         assert(0)
+        
+def calculate_all(args, y, yt):
+    psnr_score = psnr(y, yt, args.scale, args.rgb_range)
+    ssim_score = ssim(y, yt, args.scale)
+    return (psnr_score, ssim_score)
 
 print('[ OK ] Module "evaluation"')

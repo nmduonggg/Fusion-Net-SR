@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
 from torch.autograd import Variable
-import math
+
 
 class DGNet(nn.Module):
     def __init__(self, scale: int=2):
@@ -117,10 +117,11 @@ class SpatialAttention(nn.Module):
         self.gate_s = GumbelSoftmax(tau=eps)
         # Norm
         self.norm = lambda x: torch.norm(x, p=1, dim=(1,2,3))
+        self.avgpool = nn.AdaptiveAvgPool2d(output_size=(self.tile_size, self.tile_size))
     
     def forward(self, x):
         # Pooling
-        input_ds = F.adaptive_avg_pool2d(input=x, output_size=(self.tile_size, self.tile_size))
+        input_ds = self.avgpool(x)
         # spatial attention
         s_in = self.atten_s(input_ds) # [N, 1, h, w]
         # spatial gate
@@ -170,6 +171,10 @@ class ChannelAttention(nn.Module):
         norm_t = self.eleNum_c.to(x.device)
         return mask_c, norm, norm_t
     
-    def get_flops(self):
-        flops = self.inplanes * self.bottleneck + self.bottleneck * self.outplanes
-        return flops
+if __name__=='__main__':
+    from utils import calc_flops
+    model = DGNet(2)
+    model.load_state_dict(torch.load('/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/DGNet/_best.t7', map_location='cpu'))
+    calc_flops(model)
+    
+    

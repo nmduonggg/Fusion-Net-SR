@@ -37,13 +37,9 @@ core.cuda()
 
 loss_func = loss.create_loss_func(args.loss)
 
-# # working dir
-# out_dir = os.path.join(args.cv_dir, name)
-# if not os.path.exists(out_dir):
-#     os.makedirs(out_dir)
-
 def test():
-    perf_fs = []
+    psnrs = []
+    ssims = []
     total_val_loss = 0.0
     total_sparsity = 0.0
     #walk through the test set
@@ -63,14 +59,16 @@ def test():
         
         val_loss = loss_func(yf, yt).item()
         total_val_loss += val_loss
-        perf_f = evaluation.calculate(args, yf, yt)
-        perf_fs.append(perf_f.cpu())
+        psnr, ssim = evaluation.calculate_all(args, yf, yt)
+        psnrs.append(psnr.cpu())
+        ssims.append(ssim.cpu())
 
-    mean_perf_f = torch.stack(perf_fs, 0).mean()
+    mean_psnr = torch.stack(psnrs, 0).mean()
+    mean_ssim = torch.stack(ssims, 0).mean()
     total_val_loss /= len(XYtest)
     total_sparsity /= len(XYtest)
 
-    log_str = f'[INFO] Val P: {mean_perf_f:.3f} - Sparsity: {total_sparsity:.3f} Val L: {total_val_loss}'
+    log_str = f'[INFO] Val PSNR: {mean_psnr:.3f} - Val SSIM: {mean_ssim:.3f} - Sparsity: {total_sparsity:.3f} Val L: {total_val_loss}'
     print(log_str)
     
 if __name__=='__main__':

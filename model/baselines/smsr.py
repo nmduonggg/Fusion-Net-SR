@@ -1,8 +1,6 @@
-from model import common
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
-import matplotlib.pyplot as plt
 
 
 def make_model(args, parent=False):
@@ -396,3 +394,8 @@ class SMSR(nn.Module):
             x = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
 
             return x
+        
+if __name__=='__main__':
+    from utils import calc_flops
+    model = SMSR(2)
+    calc_flops(model)

@@ -1,8 +1,7 @@
-from model import common
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
-import matplotlib.pyplot as plt
+
 
 def gumbel_softmax(x, dim, tau):
     gumbels = torch.rand_like(x)
@@ -184,3 +183,8 @@ class SMB(nn.Module):
             
         return out, ch_mask
         
+if __name__=='__main__':
+    from utils import calc_flops
+    model = SMSR(2)
+    model.load_state_dict(torch.load('/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SMSR/_best.t7', map_location='cpu'))
+    calc_flops(model)
