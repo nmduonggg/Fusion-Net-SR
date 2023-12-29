@@ -32,9 +32,17 @@ class RCAN(nn.Module):
         # output layer
         self.conv3 = nn.Conv2d(32, 1, 3, 1, 1)
         
+        self.density = []
+        
+    def reset_density(self):
+        self.density = []
+        
     def forward(self, x):
         z = self.conv1(x)
-        x = self.body(z)
+        for i in range(4):
+            x = self.body[i](z if i==0 else x)
+            assert self.body[i].density is not None
+            self.density.append(self.body[i].density)
         x = self.conv2(x)
         x = torch.add(x, z)
         x = self.upsampling(x)
@@ -52,14 +60,19 @@ class ResidualGroup(nn.Module):
         for _ in range(num_rcab):
             residual_group.append(RCAB(channel, reduction))
         residual_group.append(nn.Conv2d(channel, channel, 3, 1, 1))
-
+        self.num_rcab = num_rcab
         self.residual_group = nn.Sequential(*residual_group)
-
+        self.density = None
+    
     def forward(self, x: Tensor) -> Tensor:
         identity = x
         out = self.residual_group(x)
         out = torch.add(out, identity)
-
+        
+        for i, block in enumerate(self.residual_group[:-1]):
+            self.density = block.density if i==0 \
+                    else block.density + self.density
+        self.density /= self.num_rcab
         return out
         
 
@@ -75,10 +88,12 @@ class RCAB(nn.Module):
             nn.Conv2d(channel, channel, 3, 1, 1),
             ChannelAttention(channel, reduction)
         )
+        self.density = None
         
     def forward(self, x):
         identity = x
         out = self.body(x)
+        self.density = self.body[-1].mask.mean()
         out = out + identity
         
         return out
@@ -91,11 +106,14 @@ class ChannelAttention(nn.Module):
             nn.Conv2d(channel, channel // reduction, 1, 1, 0),
             nn.ReLU(True),
             nn.Conv2d(channel // reduction, channel, 1, 1, 0),
-            nn.Sigmoid(),
+            nn.Sigmoid(),   # actually generate both spatial and channel mask, but each channel has its own spatial mask
         )
+        self.mask = None
 
     def forward(self, x: Tensor) -> Tensor:
         out = self.body(x)
+        self.mask = out.contiguous().cpu()
+        self.mask = (self.mask >= 0.5).float()
         out = torch.mul(out, x)
 
         return out

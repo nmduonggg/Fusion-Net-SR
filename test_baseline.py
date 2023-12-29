@@ -42,6 +42,7 @@ def test():
     ssims = []
     total_val_loss = 0.0
     total_sparsity = 0.0
+    valid_density = [0]*4
     #walk through the test set
     core.eval()
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
@@ -62,13 +63,24 @@ def test():
         psnr, ssim = evaluation.calculate_all(args, yf, yt)
         psnrs.append(psnr.cpu())
         ssims.append(ssim.cpu())
+        
+        density = core.density
+        print(density)
+        for i in range(len(density)):
+            valid_density[i] += density[i]
+        core.reset_density()
+    
+    for i in range(len(valid_density)):
+        valid_density[i] /= len(XYtest)
+        print(f'[SPARSITY] B{i+1}: {1.0-valid_density[i]}')
 
     mean_psnr = torch.stack(psnrs, 0).mean()
     mean_ssim = torch.stack(ssims, 0).mean()
     total_val_loss /= len(XYtest)
-    total_sparsity /= len(XYtest)
+    total_sparsity /= len(XYtest)   # actually density -> sparsity = 1 - total_sparsity
+    total_sparsity = 1.0 if total_sparsity==0 else total_sparsity
 
-    log_str = f'[INFO] Val PSNR: {mean_psnr:.3f} - Val SSIM: {mean_ssim:.3f} - Sparsity: {total_sparsity:.3f} Val L: {total_val_loss}'
+    log_str = f'[INFO] Val PSNR: {mean_psnr:.3f} - Val SSIM: {mean_ssim:.3f} - Sparsity: {(1.0-total_sparsity):.3f} Val L: {total_val_loss}'
     print(log_str)
     
 if __name__=='__main__':

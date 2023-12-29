@@ -34,7 +34,7 @@ class ChannelAttention(nn.Module):
         y = self.conv_du(y)
         return x * y
     
-class SMSR(nn.Module):
+class SMSRV2(nn.Module):
     def __init__(self, scale:int=2):
         super().__init__()
         
@@ -66,6 +66,10 @@ class SMSR(nn.Module):
         ]
         self.body = nn.Sequential(*modules_body)
         self.tail = nn.Sequential(*modules_tail)
+        self.density = []
+        
+    def reset_density(self):
+        self.density = []
         
     def forward(self, x):
         x0 = x
@@ -77,10 +81,8 @@ class SMSR(nn.Module):
         for i in range(4):
             fea, _spa_mask, _ch_mask = self.body[i](fea)
             out_fea.append(fea)
-            if self.training:
-                sparsity.append((_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1)).float())
-            else:
-                sparsity.append((_spa_mask * _ch_mask.view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * (1.0 - _ch_mask).view(1, -1, 1, 1)).float())
+            sparsity.append((_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1)).float())
+            self.density.append((sparsity[-1] >= 0.5).float().mean())
         out_fea = self.collect(torch.cat(out_fea, 1)) + x
         sparsity = torch.cat(sparsity, 0)
         
@@ -185,6 +187,6 @@ class SMB(nn.Module):
         
 if __name__=='__main__':
     from utils import calc_flops
-    model = SMSR(2)
+    model = SMSRV2(2)
     model.load_state_dict(torch.load('/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SMSR/_best.t7', map_location='cpu'))
     calc_flops(model)

@@ -38,6 +38,15 @@ def set_template(args):
         args.scale=2
         args.core='SMSR'
         args.weight='./checkpoints/SMSR/_best.t7'
+    elif  args.template == 'SMSRv2':
+        print('[INFO] Template found (SMSRv2-like SR)')
+        args.style='Y'
+        args.testset_tag='Set14B'
+        args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
+        args.rgb_range=1.0
+        args.scale=2
+        args.core='SMSRv2'
+        args.weight='./checkpoints/SMSR/_best.t7'
     else:
         print('[ERRO] Template not found')
         assert(0)

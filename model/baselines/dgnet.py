@@ -4,7 +4,6 @@ import numpy as np
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-
 class DGNet(nn.Module):
     def __init__(self, scale: int=2):
         super(DGNet, self).__init__()
@@ -20,16 +19,25 @@ class DGNet(nn.Module):
             nn.Conv2d(64, 32, 1, 1, 0)
         )
         # body
-        self.body = nn.Sequential(*[
+        self.body = nn.ModuleList([
             BasicBlock(32, 2) for _ in range(4)\
         ])
         # tail
         self.tails = nn.Sequential(
             UpSampler(32), nn.Conv2d(32, 1, 1, 1, 0))
+        self.density = []
+        
+    def reset_density(self):
+        self.density = []
     
     def forward(self, x):
         x = self.heads(x)
-        x = self.body(x)
+        for i in range(4):
+            x = self.body[i](x)
+            dense = self.body[i].density
+            assert dense is not None
+            self.density.append(dense)
+            
         x = self.tails(x)
         return x
         
@@ -45,6 +53,7 @@ class BasicBlock(nn.Module):
             nn.BatchNorm2d(channels))
         self.mask_c = ChannelAttention(channels, channels)
         self.mask_s = SpatialAttention(channels, t)
+        self.density = None
     
     def forward(self, x):
         B, C, H, W = x.size()
@@ -55,6 +64,8 @@ class BasicBlock(nn.Module):
         x = x * masked_c * masked_s if not self.training else x * masked_c
         x = self.conv2(x)
         x = F.relu(x * masked_s + residual)
+        s = x.contiguous().cpu()
+        self.density = (s > 0).float().mean()
         return x
     
 class UpSampler(nn.Module):

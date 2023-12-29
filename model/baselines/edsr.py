@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Dict
 from torch import Tensor
+import torch.nn.functional as F
 
 class EDSR(nn.Module):
     def __init__(self, scale:int=2):
@@ -12,14 +13,21 @@ class EDSR(nn.Module):
             nn.Conv2d(1, 64, 3, 1, 1), 
             nn.Conv2d(64, 32, 1, 1, 0)
         )
-        self.body = nn.Sequential(*[
+        self.body = nn.ModuleList([
             ResBlock(32, 3, 1, 1) for _ in range(4) 
         ])
         self.tails = nn.Sequential(UpSampler(32), nn.Conv2d(32, 1, 1, 1, 0))
+        self.density = []
+        
+    def reset_density(self):
+        self.density = []
         
     def forward(self, x: Tensor) -> Tensor:
         z = self.heads(x)
-        z = self.body(z)
+        for i in range(4):
+            z = self.body[i](z)
+            assert self.body[i].density is not None
+            self.density.append(self.body[i].density)
         z = self.tails(z)
         
         return z
@@ -27,18 +35,24 @@ class EDSR(nn.Module):
 class ResBlock(nn.Module):
     """Baseline of EDSR so rescale factor is removed (original paper set up is 0.1 for deep architecture)
     """
-    def __init__(self, n_features, kernel_size=3, stride=1, padding=1, bias=False, rescale_factor = 1.):
+    def __init__(self, n_features, kernel_size=3, stride=1, padding=1, bias=False, rescale_factor = 1.0):
         super().__init__()
         self.rescale_factor = rescale_factor
         self.conv1 = nn.Conv2d(n_features, n_features, kernel_size, stride, padding, bias=bias)
         self.conv2 = nn.Conv2d(n_features, n_features, kernel_size, stride, padding, bias=bias)
-        self.relu = nn.ReLU(inplace=True)
+        self.density = None
+        
+    def reset_density(self):
+        self.density = []
         
     def forward(self, x):
-        z = x
-        residual = self.relu(self.conv1(x))
-        residual = self.conv2(x).mul(self.rescale_factor)
-        y = z + residual
+        identity = x
+        x = F.relu(self.conv1(x))
+        s = (x.contiguous().cpu() > 0).float()
+        self.density = (s.cpu().mean())
+        
+        x = self.conv2(x).mul(self.rescale_factor)
+        y = x + identity
         
         return y
     

@@ -248,7 +248,7 @@ class SMB(nn.Module):
                     fea = self.body[i](fea)
                     fea = fea * ch_mask[:, :, i:i + 1, 1:] * spa_mask + fea * ch_mask[:, :, i:i + 1, :1]
                 else:
-                    fea_d = self.body[i](fea * ch_mask[:, :, i - 1:i, :1])
+                    fea_d = self.body[i](fea * ch_mask[:, :, i - 1:i, :1])  # 
                     fea_s = self.body[i](fea * ch_mask[:, :, i - 1:i, 1:])
                     fea = fea_d * ch_mask[:, :, i:i + 1, 1:] * spa_mask + fea_d * ch_mask[:, :, i:i + 1, :1] + \
                           fea_s * ch_mask[:, :, i:i + 1, 1:] * spa_mask + fea_s * ch_mask[:, :, i:i + 1, :1] * spa_mask
@@ -261,7 +261,7 @@ class SMB(nn.Module):
 
         if not self.training:
             self.spa_mask = x[1]
-
+            
             # generate indices
             self._generate_indices()
 
@@ -278,11 +278,11 @@ class SMB(nn.Module):
                     fea_sparse.append(self.relu(fea_s))
 
             # 1x1 conv
-            fea_dense = torch.cat(fea_dense, 1)
-            fea_sparse = torch.cat(fea_sparse, 0)
+            fea_dense = torch.cat(fea_dense, 1) if len(fea_dense) > 0 else None
+            fea_sparse = torch.cat(fea_sparse, 0) if len(fea_sparse) > 0 else None
             out, _ = self._sparse_conv(fea_dense, fea_sparse, k=1, index=self.n_layers)
 
-            return out
+            return out, self.ch_mask_round
 
 
 class SMM(nn.Module):
@@ -322,12 +322,14 @@ class SMM(nn.Module):
         if not self.training:
             self.body._prepare()
             spa_mask = self.spa_mask(x)
-            spa_mask = (spa_mask[:, 1:, ...] > spa_mask[:, :1, ...]).float()
-
-            out = self.body([x, spa_mask])
+            spa_mask = F.softmax(spa_mask, dim=1).round()
+            out, ch_mask = self.body([x, spa_mask[:, 1:, ...]])
             out = self.ca(out) + x
+            
+            spa_mask = self.spa_mask(x)
+            spa_mask = F.softmax(spa_mask, dim=1).round()
 
-            return out
+            return out, spa_mask[:, 1:, ...], ch_mask
 
 
 class SMSR(nn.Module):
@@ -385,17 +387,21 @@ class SMSR(nn.Module):
 
         if not self.training:
             out_fea = []
+            sparsity = []
             fea = x
             for i in range(4):
-                fea = self.body[i](fea)
+                fea, _spa_mask, _ch_mask = self.body[i](fea)
                 out_fea.append(fea)
+                sparsity.append(_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1))
             out_fea = self.collect(torch.cat(out_fea, 1)) + x
-
+            sparsity = torch.cat(sparsity, 0)
+            
             x = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
 
-            return x
+            return [x, sparsity]
         
 if __name__=='__main__':
     from utils import calc_flops
     model = SMSR(2)
+    model.load_state_dict(torch.load('/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SMSR/_best.t7', map_location='cpu'))
     calc_flops(model)

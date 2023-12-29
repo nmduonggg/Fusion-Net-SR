@@ -1,7 +1,8 @@
 from .edsr import EDSR
 from .rcan import RCAN
 from .dgnet import DGNet
-from .smsr_v2 import SMSR
+from .smsr_v2 import SMSRV2
+from .smsr import SMSR
 
 def config(args):
     arch = args.core.split("-")
@@ -15,5 +16,7 @@ def config(args):
         return DGNet(scale=args.scale)
     elif name=='SMSR':
         return SMSR(scale=args.scale)
+    elif name=='SMSRv2':
+        return SMSRV2(scale=args.scale)
     else:
         assert(0), 'No configuration found'
