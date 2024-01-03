@@ -1,6 +1,8 @@
+from model.baselines.original_smsr import common
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
+import matplotlib.pyplot as plt
 
 
 def make_model(args, parent=False):
@@ -19,9 +21,9 @@ def gumbel_softmax(x, dim, tau):
     return x
 
 
-class ChannelAttention(nn.Module):
+class CALayer(nn.Module):
     def __init__(self, channel, reduction=16):
-        super(ChannelAttention, self).__init__()
+        super(CALayer, self).__init__()
 
         # global average pooling: feature --> point
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
@@ -248,7 +250,7 @@ class SMB(nn.Module):
                     fea = self.body[i](fea)
                     fea = fea * ch_mask[:, :, i:i + 1, 1:] * spa_mask + fea * ch_mask[:, :, i:i + 1, :1]
                 else:
-                    fea_d = self.body[i](fea * ch_mask[:, :, i - 1:i, :1])  # 
+                    fea_d = self.body[i](fea * ch_mask[:, :, i - 1:i, :1])
                     fea_s = self.body[i](fea * ch_mask[:, :, i - 1:i, 1:])
                     fea = fea_d * ch_mask[:, :, i:i + 1, 1:] * spa_mask + fea_d * ch_mask[:, :, i:i + 1, :1] + \
                           fea_s * ch_mask[:, :, i:i + 1, 1:] * spa_mask + fea_s * ch_mask[:, :, i:i + 1, :1] * spa_mask
@@ -261,7 +263,7 @@ class SMB(nn.Module):
 
         if not self.training:
             self.spa_mask = x[1]
-            
+
             # generate indices
             self._generate_indices()
 
@@ -278,11 +280,11 @@ class SMB(nn.Module):
                     fea_sparse.append(self.relu(fea_s))
 
             # 1x1 conv
-            fea_dense = torch.cat(fea_dense, 1) if len(fea_dense) > 0 else None
-            fea_sparse = torch.cat(fea_sparse, 0) if len(fea_sparse) > 0 else None
+            fea_dense = torch.cat(fea_dense, 1)
+            fea_sparse = torch.cat(fea_sparse, 0)
             out, _ = self._sparse_conv(fea_dense, fea_sparse, k=1, index=self.n_layers)
 
-            return out, self.ch_mask_round
+            return out
 
 
 class SMM(nn.Module):
@@ -295,18 +297,18 @@ class SMM(nn.Module):
             nn.ReLU(True),
             nn.Conv2d(in_channels//4, in_channels//4, 3, 1, 1),
             nn.ReLU(True),
-            nn.Conv2d(in_channels//4, 2, 1, 1, 0)
+            nn.Conv2d(in_channels // 4, 2, 3, 1, 1),
         )
 
         # body
         self.body = SMB(in_channels, out_channels, kernel_size, stride, padding, bias, n_layers=4)
 
         # CA layer
-        self.ca = ChannelAttention(out_channels)
+        self.ca = CALayer(out_channels)
 
         self.tau = 1
 
-    def _set_tau(self, tau):
+    def _update_tau(self, tau):
         self.tau = tau
 
     def forward(self, x):
@@ -320,42 +322,42 @@ class SMM(nn.Module):
             return out, spa_mask[:, 1:, ...], ch_mask
 
         if not self.training:
-            self.body._prepare()
             spa_mask = self.spa_mask(x)
-            spa_mask = F.softmax(spa_mask, dim=1).round()
-            out, ch_mask = self.body([x, spa_mask[:, 1:, ...]])
-            out = self.ca(out) + x
-            
-            spa_mask = self.spa_mask(x)
-            spa_mask = F.softmax(spa_mask, dim=1).round()
+            spa_mask = (spa_mask[:, 1:, ...] > spa_mask[:, :1, ...]).float()
 
-            return out, spa_mask[:, 1:, ...], ch_mask
+            out = self.body([x, spa_mask])
+            out = self.ca(out) + x
+
+            return out
 
 
 class SMSR(nn.Module):
-    def __init__(self, scale:int=2):
+    def __init__(self, scale, conv=common.default_conv):
         super(SMSR, self).__init__()
 
-        n_feats = 32
+        n_feats = 64
         kernel_size = 3
-        self.scale = 2
+        self.scale = scale
+
+        # RGB mean for DIV2K
+        rgb_mean = (0.4488, 0.4371, 0.4040)
+        rgb_std = (1.0, 1.0, 1.0)
+        self.sub_mean = common.MeanShift(channel=1, rgb_range=1.0, rgb_mean=rgb_mean, rgb_std=rgb_std)
 
         # define head module
-        # common blocks
-        self.head = nn.Sequential(
-            nn.Conv2d(1, 64, 3, 1, 1), 
-            nn.Conv2d(64, 32, 1, 1, 0)
-        )
+        modules_head = [conv(1, n_feats, kernel_size),
+                        nn.ReLU(True),
+                        conv(n_feats, n_feats, kernel_size)]
 
         # define body module
         modules_body = [SMM(n_feats, n_feats, kernel_size) \
-                        for _ in range(4)]
+                        for _ in range(5)]
 
         # define collect module
         self.collect = nn.Sequential(
-            nn.Conv2d(32*4, 32, 1, 1, 0),
+            nn.Conv2d(64*5, 64, 1, 1, 0),
             nn.ReLU(True),
-            nn.Conv2d(32, 32, 3, 1, 1)
+            nn.Conv2d(64, 64, 3, 1, 1)
         )
 
         # define tail module
@@ -363,18 +365,22 @@ class SMSR(nn.Module):
             nn.Conv2d(n_feats, self.scale*self.scale, 3, 1, 1),
             nn.PixelShuffle(self.scale),
         ]
+
+        self.add_mean = common.MeanShift(channel=1, rgb_range=1.0, rgb_mean=rgb_mean, rgb_std=rgb_std, sign=1)
+
+        self.head = nn.Sequential(*modules_head)
         self.body = nn.Sequential(*modules_body)
         self.tail = nn.Sequential(*modules_tail)
 
     def forward(self, x):
-        x0 = x
+        x0 = self.sub_mean(x)
         x = self.head(x0)
 
         if self.training:
             sparsity = []
             out_fea = []
             fea = x
-            for i in range(4):
+            for i in range(5):
                 fea, _spa_mask, _ch_mask = self.body[i](fea)
                 out_fea.append(fea)
                 sparsity.append(_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1))
@@ -382,26 +388,19 @@ class SMSR(nn.Module):
             sparsity = torch.cat(sparsity, 0)
 
             x = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
+            x = self.add_mean(x)
 
             return [x, sparsity]
 
         if not self.training:
             out_fea = []
-            sparsity = []
             fea = x
-            for i in range(4):
-                fea, _spa_mask, _ch_mask = self.body[i](fea)
+            for i in range(5):
+                fea = self.body[i](fea)
                 out_fea.append(fea)
-                sparsity.append(_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1))
             out_fea = self.collect(torch.cat(out_fea, 1)) + x
-            sparsity = torch.cat(sparsity, 0)
-            
-            x = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
 
-            return [x, sparsity]
-        
-if __name__=='__main__':
-    from utils import calc_flops
-    model = SMSR(2)
-    model.load_state_dict(torch.load('/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SMSR/_best.t7', map_location='cpu'))
-    calc_flops(model)
+            x = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
+            x = self.add_mean(x)
+
+            return x

@@ -79,8 +79,14 @@ def train():
             train_loss = loss_func(yf, yt)
             if type(out) is list:
                 sparsity_loss = sparsity.mean()
-                lambda_sparsity = min((epoch / 50), 1) * 0.05                  
+                lambda_sparsity = min((epoch / 50), 1) * 0.05         
                 train_loss = train_loss + sparsity_loss*lambda_sparsity
+                
+                # update tau for gumbel softmax
+                tau = max(1 - (epoch - 1) / 500, 0.4)
+                for m in core.modules():
+                    if hasattr(m, '_update_tau'):
+                        m._update_tau(tau)
                 
             optimizer.zero_grad()
             train_loss.backward()

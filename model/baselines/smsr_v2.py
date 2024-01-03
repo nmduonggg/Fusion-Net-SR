@@ -80,9 +80,10 @@ class SMSRV2(nn.Module):
         out_fea = []
         for i in range(4):
             fea, _spa_mask, _ch_mask = self.body[i](fea)
+            round_spa, round_ch = _spa_mask.round(), _ch_mask.round()
             out_fea.append(fea)
             sparsity.append((_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1)).float())
-            self.density.append((sparsity[-1] >= 0.5).float().mean())
+            self.density.append(torch.mean((round_spa * round_ch[..., 1].view(1, -1, 1, 1) + torch.ones_like(round_spa) * round_ch[..., 0].view(1, -1, 1, 1)).float()))
         out_fea = self.collect(torch.cat(out_fea, 1)) + x
         sparsity = torch.cat(sparsity, 0)
         
@@ -110,6 +111,9 @@ class SMM(nn.Module):
         self.ca = ChannelAttention(out_channels)
 
         self.tau = 1
+        
+    def _set_tau(self, tau):
+        self.tau = tau
         
     def forward(self, x):
         spa_mask = self.spa_mask(x)
