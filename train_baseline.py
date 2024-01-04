@@ -103,6 +103,9 @@ def train():
             total_val_loss = 0.0
             #walk through the test set
             core.eval()
+            for m in core.modules():
+                if hasattr(m, '_prepare'):
+                    m._prepare()
             for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
                 x  = x.cuda()
                 yt = yt.cuda()

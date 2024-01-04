@@ -280,8 +280,8 @@ class SMB(nn.Module):
                     fea_sparse.append(self.relu(fea_s))
 
             # 1x1 conv
-            fea_dense = torch.cat(fea_dense, 1)
-            fea_sparse = torch.cat(fea_sparse, 0)
+            fea_dense = torch.cat(fea_dense, 1) if len(fea_dense)>0 else None
+            fea_sparse = torch.cat(fea_sparse, 0) if len(fea_sparse)>0 else None
             out, _ = self._sparse_conv(fea_dense, fea_sparse, k=1, index=self.n_layers)
 
             return out

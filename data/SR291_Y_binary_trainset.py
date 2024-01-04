@@ -29,3 +29,10 @@ class SR291_Y_binary_trainset(Dataset):
 
     def __getitem__(self, idx):
         return self.X[idx], self.Y[idx]
+    
+if __name__=='__main__':
+    dts = SR291_Y_binary_trainset(
+        root='/mnt/disk1/nmduong/FusionNet/data/2x/',
+        max_load=10,
+    )
+    print(dts[0])
