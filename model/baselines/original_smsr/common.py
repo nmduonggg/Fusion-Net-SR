@@ -16,12 +16,11 @@ class MeanShift(nn.Conv2d):
         super(MeanShift, self).__init__(channel, channel, kernel_size=1)
         std = torch.Tensor(rgb_std)
         mean_ = torch.Tensor(rgb_mean)
-        
         if channel==1:
             std = torch.mean(std, dim=0, keepdim=True)
             mean_ = torch.mean(mean_, dim=0, keepdim=True)
         self.weight.data = torch.eye(channel).view(channel, channel, 1, 1)
-        self.weight.data.div_(std.view(channel, channel, 1, 1))
+        self.weight.data.div_(std.view(channel, 1, 1, 1))
         self.bias.data = sign * rgb_range * mean_
         self.bias.data.div_(std)
         self.weight.requires_grad = False

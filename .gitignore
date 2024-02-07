@@ -3,4 +3,5 @@ __pycache__/
 wandb/
 checkpoints/
 train_baseline_wandb.py
+train_baseline_dgnet_wdb.py
 scripts_wandb/

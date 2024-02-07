@@ -6,19 +6,12 @@ from torch.autograd import Variable
 
 import math
 
-class DGNet(nn.Module):
-    def __init__(self, scale: int=2):
-        super(DGNet, self).__init__()
+class DGNetSR(nn.Module):
+    def __init__(self, scale: int=2, tile:int=2):
+        super(DGNetSR, self).__init__()
+
+        self.tile = tile
         
-        # lr patch size
-        # self.h = 21
-        # self.w = 21
-        # self.block_h = 3
-        # self.block_w = 3
-        self.mask_h = 20
-        self.mask_w = 20
-        
-        self.criterion = Loss()
         # heads
         self.heads = nn.Sequential(
             nn.Conv2d(1, 64, 3, 1, 1),
@@ -26,8 +19,7 @@ class DGNet(nn.Module):
         )
         # body
         self.body = nn.ModuleList([
-            BasicBlock(32, self.mask_h, self.mask_w) for _ in range(4)\
-        ])
+            BasicBlock(32, self.tile) for _ in range(4)])
         # tail
         self.tails = nn.Sequential(
             UpSampler(32), nn.Conv2d(32, 1, 1, 1, 0))
@@ -36,75 +28,78 @@ class DGNet(nn.Module):
     def reset_density(self):
         self.density = []
         
-    def flop_forward(self, x, label, den_target, lbda, gamma, p):
-        batch_num, C, H, W = x.shape
-        flops_heads = torch.Tensor([1*64*9 *H*W + 64*32*9*H*W])
-        x = self.heads(x)
-        # residual modules
-        norm1 = torch.zeros(1, batch_num+1).to(x.device)
-        norm2 = torch.zeros(1, batch_num+1).to(x.device)
-        flops = torch.zeros(1, batch_num+2).to(x.device)    # flops[0] = 0
-        x = (x, norm1, norm2, flops)
-        for i in range(3):
-            x = self.body[i].flop_forward(x)
-            self.density.append(self.body[i].density.cpu())
+    # def flop_forward(self, x, label, den_target, lbda, gamma, p):
+    #     batch_num, C, H, W = x.shape
+    #     flops_heads = torch.Tensor([1*64*9 *H*W + 64*32*9*H*W])
+    #     x = self.heads(x)
+    #     # residual modules
+    #     norm1 = torch.zeros(1, batch_num+1).to(x.device)
+    #     norm2 = torch.zeros(1, batch_num+1).to(x.device)
+    #     flops = torch.zeros(1, batch_num+2).to(x.device)    # flops[0] = 0
+    #     x = (x, norm1, norm2, flops)
+    #     for i in range(3):
+    #         x = self.body[i].flop_forward(x)
+    #         self.density.append(self.body[i].density.cpu())
             
-        x, norm1, norm2, flops = self.body[3].flop_forward(x)
-        self.density.append(self.body[3].density)
-        x = self.tails(x)
+    #     x, norm1, norm2, flops = self.body[3].flop_forward(x)
+    #     self.density.append(self.body[3].density)
+    #     x = self.tails(x)
         
-        # norm and flops
-        norm_s = norm1[1:, 0:batch_num].permute(1, 0).contiguous()
-        norm_c = norm2[1:, 0:batch_num].permute(1, 0).contiguous()
-        norm_s_t = norm1[1:, -1].unsqueeze(0)
-        norm_c_t = norm2[1:, -1].unsqueeze(0)
+    #     # norm and flops
+    #     norm_s = norm1[1:, 0:batch_num].permute(1, 0).contiguous()
+    #     norm_c = norm2[1:, 0:batch_num].permute(1, 0).contiguous()
+    #     norm_s_t = norm1[1:, -1].unsqueeze(0)
+    #     norm_c_t = norm2[1:, -1].unsqueeze(0)
         
         
-        # flops_real = [[flop_masked_conv (real), flop_mask, flop_conv_full (original)], [2], ...]
-        flops_real = [flops[1:, 0:batch_num].permute(1, 0).contiguous(), 
-                      flops_heads.to(x.device)]
-        flops_mask = flops[1:, -2].unsqueeze(0)
-        flops_ori  = flops[1:, -1].unsqueeze(0)
-        # get outputs
-        outputs = {}
-        outputs["closs"], outputs["rloss"], outputs["bloss"] = self.get_loss(
-                            x, label, batch_num, den_target, lbda, gamma, p,
-                            norm_s, norm_c, norm_s_t, norm_c_t, 
-                            flops_real, flops_mask, flops_ori)
-        outputs["out"] = x
-        outputs["flops_real"] = flops_real
-        outputs["flops_mask"] = flops_mask
-        outputs["flops_ori"] = flops_ori
-        return outputs
+    #     # flops_real = [[flop_masked_conv (real), flop_mask, flop_conv_full (original)], [2], ...]
+    #     flops_real = [flops[1:, 0:batch_num].permute(1, 0).contiguous(), 
+    #                   flops_heads.to(x.device)]
+    #     flops_mask = flops[1:, -2].unsqueeze(0)
+    #     flops_ori  = flops[1:, -1].unsqueeze(0)
+    #     # get outputs
+    #     outputs = {}
+    #     outputs["closs"], outputs["rloss"], outputs["bloss"] = self.get_loss(
+    #                         x, label, batch_num, den_target, lbda, gamma, p,
+    #                         norm_s, norm_c, norm_s_t, norm_c_t, 
+    #                         flops_real, flops_mask, flops_ori)
+    #     outputs["out"] = x
+    #     outputs["flops_real"] = flops_real
+    #     outputs["flops_mask"] = flops_mask
+    #     outputs["flops_ori"] = flops_ori
+    #     return outputs
     
-    def set_criterion(self, criterion):
-        self.criterion = criterion
-        return
+    # def set_criterion(self, criterion):
+    #     self.criterion = criterion
+    #     return
     
-    def get_loss(self, output, label, batch_size, den_target, lbda, gamma, p,
-                 mask_norm_s, mask_norm_c, norm_s_t, norm_c_t,
-                 flops_real, flops_mask, flops_ori):
-        closs, rloss, bloss = self.criterion(output, label, flops_real, flops_mask,
-                flops_ori, batch_size, den_target, lbda, mask_norm_s, mask_norm_c,
-                norm_s_t, norm_c_t, gamma, p)
-        return closs, rloss, bloss
+    # def get_loss(self, output, label, batch_size, den_target, lbda, gamma, p,
+    #              mask_norm_s, mask_norm_c, norm_s_t, norm_c_t,
+    #              flops_real, flops_mask, flops_ori):
+    #     closs, rloss, bloss = self.criterion(output, label, flops_real, flops_mask,
+    #             flops_ori, batch_size, den_target, lbda, mask_norm_s, mask_norm_c,
+    #             norm_s_t, norm_c_t, gamma, p)
+    #     return closs, rloss, bloss
         
     
     def forward(self, x):
         x = self.heads(x)
+        densities = []
         for i in range(4):
-            x = self.body[i](x)
+            x, density = self.body[i](x)
+            densities.append(density)
             dense = self.body[i].density
             assert dense is not None
             self.density.append(dense)
-            
+        densities = torch.stack(densities, dim=0).mean()
         x = self.tails(x)
-        return x
+        return [x, densities]
         
 class BasicBlock(nn.Module):
-    def __init__(self, channels, mask_h, mask_w):
+    def __init__(self, channels, tile):
         super(BasicBlock, self).__init__()
         self.channels = channels
+        self.tile = tile
         self.conv1 = nn.Sequential(
             nn.Conv2d(channels, channels, 3, 1, 1, bias=False),
             nn.BatchNorm2d(channels),
@@ -113,73 +108,75 @@ class BasicBlock(nn.Module):
             nn.Conv2d(channels, channels, 3, 1, 1, bias=False),
             nn.BatchNorm2d(channels))
         self.mask_c = ChannelAttention(channels, channels)
-        self.mask_s = SpatialAttention(channels, mask_h, mask_w)
+        self.mask_s = SpatialAttention(channels, tile)
         self.density = None
         
-        # mask flops
-        flops_mks = self.mask_s.get_flops()
-        flops_mkc = self.mask_c.get_flops()
-        self.flop_mask = torch.Tensor([flops_mks + flops_mkc])
+        # # mask flops
+        # flops_mks = self.mask_s.get_flops()
+        # flops_mkc = self.mask_c.get_flops()
+        # self.flop_mask = torch.Tensor([flops_mks + flops_mkc])
         
-    def flop_forward(self, input):
-        x, norm_1, norm_2, flops = input
-        B, C, H, W = x.shape
+    # def flop_forward(self, input):
+    #     x, norm_1, norm_2, flops = input
+    #     B, C, H, W = x.shape
         
-        # flops
-        flops_conv1_full = torch.Tensor([9 * H * W * self.channels * self.channels])
-        flops_conv2_full = torch.Tensor([9 * H + W * self.channels * self.channels])
-        flops_full = flops_conv1_full + flops_conv2_full
+    #     # flops
+    #     flops_conv1_full = torch.Tensor([9 * H * W * self.channels * self.channels])
+    #     flops_conv2_full = torch.Tensor([9 * H + W * self.channels * self.channels])
+    #     flops_full = flops_conv1_full + flops_conv2_full
         
-        # forwarding
-        residual = x
-        mask_s_m, norm_s, norm_s_t = self.mask_s(x)
-        mask_c, norm_c, norm_c_t = self.mask_c(x)
-        mask_s = F.interpolate(mask_s_m, size=[H, W], mode='nearest')
-        out = self.conv1(x)
-        out = out * mask_c * mask_s if not self.training else out * mask_c
-        # conv 2
-        out = self.conv2(out)
-        out = out * mask_s
-        out = out + residual
-        out = F.relu(out)
+    #     # forwarding
+    #     residual = x
+    #     mask_s_m, norm_s, norm_s_t = self.mask_s(x)
+    #     mask_c, norm_c, norm_c_t = self.mask_c(x)
+    #     mask_s = F.interpolate(mask_s_m, size=[H, W], mode='nearest')
+    #     out = self.conv1(x)
+    #     out = out * mask_c * mask_s if not self.training else out * mask_c
+    #     # conv 2
+    #     out = self.conv2(out)
+    #     out = out * mask_s
+    #     out = out + residual
+    #     out = F.relu(out)
         
-        # norm 
-        norm_1 = torch.cat((norm_1, torch.cat((norm_s, norm_s_t)).unsqueeze(0)))
-        norm_2 = torch.cat((norm_2, torch.cat((norm_c, norm_c_t)).unsqueeze(0)))
+    #     # norm 
+    #     norm_1 = torch.cat((norm_1, torch.cat((norm_s, norm_s_t)).unsqueeze(0)))
+    #     norm_2 = torch.cat((norm_2, torch.cat((norm_c, norm_c_t)).unsqueeze(0)))
         
-        # flops
-        flops_blk = self.get_flops(mask_s, mask_c, flops_full)
-        flops = torch.cat((flops, flops_blk.unsqueeze(0)))  # stack by Lth layer
+    #     # flops
+    #     flops_blk = self.get_flops(mask_s, mask_c, flops_full)
+    #     flops = torch.cat((flops, flops_blk.unsqueeze(0)))  # stack by Lth layer
         
-        s = x.contiguous().cpu()
-        self.density = (s > 0).float().mean()        
+    #     s = x.contiguous().cpu()
+    #     self.density = (s > 0).float().mean()        
         
-        return (out, norm_1, norm_2, flops)
+    #     return (out, norm_1, norm_2, flops)
     
     def forward(self, x):
         B, C, H, W = x.size()
         residual = x
-        masked_c, _, _ = self.mask_c(x)
-        masked_s = F.interpolate(self.mask_s(x)[0], size=[H, W], mode='nearest')
+        masked_c = self.mask_c(x)
+        masked_s = self.mask_s(x)
+        masked_s = F.interpolate(masked_s, size=[H, W], mode='nearest')
         x = self.conv1(x)
         x = x * masked_c * masked_s if not self.training else x * masked_c
         x = self.conv2(x)
         x = F.relu(x * masked_s + residual)
         s = x.contiguous().cpu()
         self.density = (s > 0).float().mean()
-        return x
+        dense_mask = masked_c * masked_s
+        return [x, dense_mask]
     
-    def get_flops(self, mask_s_up, mask_c, flops_full):
-        # [B, C, H, W] -> [B]
-        s_sum = mask_s_up.sum((1,2,3))  
-        c_sum = mask_c.sum((1,2,3)) # [B]: number of activated points ?
-        # conv1
-        flops_conv1 = 9 * s_sum * c_sum * self.channels
-        # conv2
-        flops_conv2 = 9 * s_sum * c_sum * self.channels
-        # total
-        flops = flops_conv1 + flops_conv2   # theoretical flops after masked ?
-        return torch.cat((flops, self.flop_mask.to(flops.device), flops_full.to(flops.device)))    # flops_conv_masked, flops_mask, flops_conv_full (ori)
+    # def get_flops(self, mask_s_up, mask_c, flops_full):
+    #     # [B, C, H, W] -> [B]
+    #     s_sum = mask_s_up.sum((1,2,3))  
+    #     c_sum = mask_c.sum((1,2,3)) # [B]: number of activated points ?
+    #     # conv1
+    #     flops_conv1 = 9 * s_sum * c_sum * self.channels
+    #     # conv2
+    #     flops_conv2 = 9 * s_sum * c_sum * self.channels
+    #     # total
+    #     flops = flops_conv1 + flops_conv2   # theoretical flops after masked ?
+    #     return torch.cat((flops, self.flop_mask.to(flops.device), flops_full.to(flops.device)))    # flops_conv_masked, flops_mask, flops_conv_full (ori)
     
 class UpSampler(nn.Module):
     """Upsamler = Conv + PixelShuffle
@@ -245,12 +242,11 @@ class SpatialAttention(nn.Module):
     #     self.norm = lambda x: torch.norm(x, p=1, dim=(1,2,3))
     #     self.avgpool = nn.AdaptiveAvgPool2d(output_size=(self.mask_h, self.mask_w))
     
-    def __init__(self, channels, mask_h, mask_w, eps=0.66667,
+    def __init__(self, channels, tile, eps=0.66667,
                  bias=-1, **kwargs):
         super(SpatialAttention, self).__init__()
         self.channel = channels
-        self.mask_h, self.mask_w = mask_h, mask_w
-        self.eleNum_s = torch.Tensor([self.mask_h*self.mask_w])
+        self.tile = tile
         # spatial attention
         self.atten_s = nn.Conv2d(channels, 1, kernel_size=3, stride=1, bias=bias>=0, padding=1)
         if bias>=0:
@@ -259,23 +255,26 @@ class SpatialAttention(nn.Module):
         self.gate_s = GumbelSoftmax(tau=eps)
         # Norm
         self.norm = lambda x: torch.norm(x, p=1, dim=(1,2,3))
-        self.avgpool = nn.AdaptiveAvgPool2d(output_size=(self.mask_h, self.mask_w))
+        self.avgpool = nn.AvgPool2d(kernel_size=tile, stride=tile)
     
     def forward(self, x):
         # Pooling
         input_ds = self.avgpool(x)
+        # self.mask_h, self.mask_w = input_ds.shape[-2:]
+        # eleNum_s = torch.Tensor([self.mask_h*self.mask_w])
         # spatial attention
         s_in = self.atten_s(input_ds) # [N, 1, h, w]
         # spatial gate
         mask_s = self.gate_s(s_in) # [N, 1, h, w]
-        # norm
-        norm = self.norm(mask_s)
-        norm_t = self.eleNum_s.to(x.device)
-        return mask_s, norm, norm_t
+        # # norm
+        # norm = self.norm(mask_s)
+        # norm_t = eleNum_s.to(x.device)
+        return mask_s
     
-    def get_flops(self):
-        flops = self.mask_h * self.mask_w * self.channel * 9
-        return flops
+    # def get_flops(self):
+    #     # assert self.mask_h > 0 and self.mask_w > 0
+    #     flops = self.mask_h * self.mask_w * self.channel * 9
+    #     return flops
 
 class ChannelAttention(nn.Module):
     '''
@@ -303,20 +302,19 @@ class ChannelAttention(nn.Module):
         self.norm = lambda x: torch.norm(x, p=1, dim=(1,2,3))
     
     def forward(self, x):
-        batch, channel, _, _ = x.size()
         context = self.avg_pool(x) # [N, C, 1, 1] 
         # transform
         c_in = self.atten_c(context) # [N, C_out, 1, 1]
         # channel gate
         mask_c = self.gate_c(c_in) # [N, C_out, 1, 1]
         # norm
-        norm = self.norm(mask_c)
-        norm_t = self.eleNum_c.to(x.device)
-        return mask_c, norm, norm_t
+        # norm = self.norm(mask_c)
+        # norm_t = self.eleNum_c.to(x.device)
+        return mask_c
     
-    def get_flops(self):
-        flops = self.inplanes * self.bottleneck + self.bottleneck
-        return flops
+    # def get_flops(self):
+    #     flops = self.inplanes * self.bottleneck + self.bottleneck
+    #     return flops
     
 ###### LOSS ######
 class blance_loss(nn.Module):

@@ -338,14 +338,15 @@ class SMSR(nn.Module):
         n_feats = 64
         kernel_size = 3
         self.scale = scale
+        self.input_channel = 1
 
         # RGB mean for DIV2K
         rgb_mean = (0.4488, 0.4371, 0.4040)
         rgb_std = (1.0, 1.0, 1.0)
-        self.sub_mean = common.MeanShift(channel=1, rgb_range=1.0, rgb_mean=rgb_mean, rgb_std=rgb_std)
+        self.sub_mean = common.MeanShift(channel=self.input_channel, rgb_range=1.0, rgb_mean=rgb_mean, rgb_std=rgb_std)
 
         # define head module
-        modules_head = [conv(1, n_feats, kernel_size),
+        modules_head = [conv(self.input_channel, n_feats, kernel_size),
                         nn.ReLU(True),
                         conv(n_feats, n_feats, kernel_size)]
 
@@ -366,7 +367,7 @@ class SMSR(nn.Module):
             nn.PixelShuffle(self.scale),
         ]
 
-        self.add_mean = common.MeanShift(channel=1, rgb_range=1.0, rgb_mean=rgb_mean, rgb_std=rgb_std, sign=1)
+        self.add_mean = common.MeanShift(channel=self.input_channel, rgb_range=1.0, rgb_mean=rgb_mean, rgb_std=rgb_std, sign=1)
 
         self.head = nn.Sequential(*modules_head)
         self.body = nn.Sequential(*modules_body)

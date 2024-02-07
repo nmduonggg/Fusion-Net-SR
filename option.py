@@ -14,13 +14,19 @@ parser.add_argument("--loss", default="L2", help="loss function")
 parser.add_argument("--val-each", type=int, default='5', help='Validation each n epochs')
 parser.add_argument("--weight", help='Weight path')
 
+# DGNet hyper-parameters
+parser.add_argument("--lbda", type=float, default=5, help='penalty factor of the L2 loss for mask')
+parser.add_argument("--gamma", type=float, default=1, help="penalty factor of the L2 loss for balance gate")
+parser.add_argument("--den_target", type=float, default=0.5, help="target density of the mask")
+parser.add_argument("--tile", type=int, default=1, help="tile size of DGNetSR module, useless for others")
+
 parser.add_argument("--optimizer", default="SGD", help="optimizer")
 #--sgd
 parser.add_argument("--momentum", type=float, default=0.9, help="learning rate")
 #--adam
 
 #data
-parser.add_argument("--max_load", default=0, help="max number of samples to use; useful for reducing loading time during debugging; 0 = load all")
+parser.add_argument("--max_load", default=0, type=int, help="max number of samples to use; useful for reducing loading time during debugging; 0 = load all")
 parser.add_argument("--style", default="Y", help="Y-channel or RGB style")
 parser.add_argument("--trainset_tag", default="SR291B", help="train data directory")
 parser.add_argument("--trainset_patch_size", type=int, default=21, help="train data directory")

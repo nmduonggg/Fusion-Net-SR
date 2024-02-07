@@ -6,6 +6,12 @@
 
 ## Updates
 
+### 07-02-2023
+- To train and validate the DGNet module, run:
+```bash
+bash scripts/dgnet/dgnet_02.sh
+```
+
 ### 16-12-2023
 - Training SMSR, with 2 different implementation for training (gumbel-softmax) and validation (argmax)
 - Re-train RCAN with a smaller number of parameters

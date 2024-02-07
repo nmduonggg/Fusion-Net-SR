@@ -4,6 +4,7 @@ from .dgnet import DGNet
 from .smsr_v2 import SMSRV2
 from .smsr import SMSR
 from .original_smsr.smsr import SMSR as OriginalSMSR
+from .dgnet_sr import DGNetSR
 
 def config(args):
     arch = args.core.split("-")
@@ -21,5 +22,7 @@ def config(args):
         return SMSRV2(scale=args.scale)
     elif name=='OriginalSMSR':
         return OriginalSMSR(scale=args.scale)
+    elif name=="DGNetSR":
+        return DGNetSR(scale=args.scale, tile=args.tile)
     else:
         assert(0), 'No configuration found'

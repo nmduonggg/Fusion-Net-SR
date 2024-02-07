@@ -15,6 +15,7 @@ from data.SetN_testset import SetN_testset
 from data.SetN_Y_binary_testset import SetN_Y_binary_testset
 from data.SR291_trainset import SR291_trainset
 from data.SR291_Y_binary_trainset import SR291_Y_binary_trainset
+from data.Set14_RGB_testset import Set14_RGB_testset
 
 def load_trainset(args):
     tag = args.trainset_tag
@@ -38,6 +39,10 @@ def load_testset(args):
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
         return SetN_Y_binary_testset(args.testset_dir, 14, scale=args.scale), batch_size_test
+    elif tag=='Set14RGB' and args.style=='RGB':
+        print('[WARN] RGB range (<rgb_range>) set to 1.0')
+        batch_size_test = 1
+        return Set14_RGB_testset(root=args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test        
     elif tag == 'SetN':
         batch_size_test = 1
         return SetN_testset(args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test

@@ -79,7 +79,7 @@ def train():
             train_loss = loss_func(yf, yt)
             if type(out) is list:
                 sparsity_loss = sparsity.mean()
-                lambda_sparsity = min((epoch / 50), 1) * 0.05         
+                lambda_sparsity = min((epoch / 50), 1) * 0.1        
                 train_loss = train_loss + sparsity_loss*lambda_sparsity
                 
                 # update tau for gumbel softmax
@@ -87,7 +87,7 @@ def train():
                 for m in core.modules():
                     if hasattr(m, '_update_tau'):
                         m._update_tau(tau)
-                
+                        
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
@@ -113,10 +113,11 @@ def train():
                 with torch.no_grad():
                     out = core(x)
                 
+                density=1
                 if type(out) is not list:
                     yf = out
                 else:
-                    yf, sparsity = out
+                    yf, density = out
                 
                 val_loss = loss_func(yf, yt).item()
                 total_val_loss += val_loss
@@ -126,15 +127,15 @@ def train():
             mean_perf_f = torch.stack(perf_fs, 0).mean()
             total_val_loss /= len(XYtest)
 
-            log_str = f'[INFO] Epoch {epoch} - Val P: {mean_perf_f:.3f} - Val L: {total_val_loss}'
+            log_str = f'[INFO] Epoch {epoch} - Val P: {mean_perf_f:.3f} - Val L: {total_val_loss} - Density: {density.cpu().detach()}'
             print(log_str)
             torch.save(core.state_dict(), os.path.join(out_dir, f'E_%d_P_%.3f.t7' % (epoch, mean_perf_f)))
             
             if mean_perf_f > best_perf:
                 best_perf = mean_perf_f
                 torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
-                print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))
-           
+                print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+        
         log_str = '[INFO] E: %d | P: %.3f | LOSS: %.3f' % (epoch, perf, total_loss)
         print(log_str)
         
