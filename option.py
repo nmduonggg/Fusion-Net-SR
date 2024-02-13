@@ -46,6 +46,6 @@ parser.add_argument("--eval_tag", default="psnr", help="evaluation tag; availabl
 
 #output
 parser.add_argument("--cv_dir", default="checkpoints", help="checkpoint directory (models and logs are saved here)")
-
+parser.add_argument("--analyze_dir", default="ANALYZE", help="Directory for analyze and visualize")
 #template
 parser.add_argument("--template", default=None)

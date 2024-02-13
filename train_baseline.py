@@ -52,7 +52,7 @@ lr_scheduler = ReduceLROnPlateau(optimizer, patience=5)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
-out_dir = os.path.join(args.cv_dir, name)
+out_dir = os.path.join(args.cv_dir, name+f'_tile{args.tile}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}')
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
@@ -78,8 +78,9 @@ def train():
             
             train_loss = loss_func(yf, yt)
             if type(out) is list:
-                sparsity_loss = sparsity.mean()
-                lambda_sparsity = min((epoch / 50), 1) * 0.1        
+                sparsity_loss = torch.square(sparsity.mean() - args.den_target)
+                # lambda_sparsity = min((epoch / 50), 1) * 0.1
+                lambda_sparsity = args.lbda     
                 train_loss = train_loss + sparsity_loss*lambda_sparsity
                 
                 # update tau for gumbel softmax

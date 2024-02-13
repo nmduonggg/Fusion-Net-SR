@@ -1,4 +1,4 @@
-import time
+import os
 
 def set_template(args):
 
@@ -47,6 +47,15 @@ def set_template(args):
         args.scale=2
         args.core='SMSRv2'
         args.weight='./checkpoints/SMSR/_best.t7'
+    elif  args.template == 'DGNetSR':
+        print('[INFO] Template found (DGNet-like SR)')
+        args.style='Y'
+        args.testset_tag='Set14B'
+        args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
+        args.rgb_range=1.0
+        args.scale=2
+        args.core='DGNetSR'
+        args.weight = os.path.join(args.cv_dir, args.core+f'_tile{args.tile}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', '_best.t7')
     else:
         print('[ERRO] Template not found')
         assert(0)

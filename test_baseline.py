@@ -3,6 +3,7 @@ import torch
 import torch.utils.data as torchdata
 import tqdm
 import wandb
+import cv2
 
 #custom modules
 import data
@@ -37,14 +38,30 @@ core.cuda()
 
 loss_func = loss.create_loss_func(args.loss)
 
+# working dir
+out_dir = os.path.join(args.analyze_dir, name+f'_tile{args.tile}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}')
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
+    
+def get_mask(model, id):
+    model.eval() 
+    masks = model.masked_s
+    for i, m in enumerate(masks):
+        m = m.squeeze(0)
+        m = m.permute(1, 2, 0)
+        m = m.cpu().numpy()
+        print(m)
+        cv2.imwrite(os.path.join(out_dir, f"{id}_{i}.bmp"), m)
+
+# testing
 def test():
-    psnrs = []
-    ssims = []
+    perf_fs = []
     total_val_loss = 0.0
-    total_sparsity = 0.0
-    valid_density = [0]*4
     #walk through the test set
     core.eval()
+    for m in core.modules():
+        if hasattr(m, '_prepare'):
+            m._prepare()
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         x  = x.cuda()
         yt = yt.cuda()
@@ -52,36 +69,25 @@ def test():
         with torch.no_grad():
             out = core(x)
         
+        density=1
         if type(out) is not list:
             yf = out
         else:
-            yf, sparsity = out
-            total_sparsity += sparsity.mean().cpu()
+            yf, density = out
         
         val_loss = loss_func(yf, yt).item()
         total_val_loss += val_loss
-        psnr, ssim = evaluation.calculate_all(args, yf, yt)
-        psnrs.append(psnr.cpu())
-        ssims.append(ssim.cpu())
+        perf_f = evaluation.calculate(args, yf, yt)
+        perf_fs.append(perf_f.cpu())
         
-        density = core.density
-        print(density)
-        for i in range(len(density)):
-            valid_density[i] += density[i]
-        core.reset_density()
-    
-    for i in range(len(valid_density)):
-        valid_density[i] /= len(XYtest)
-        print(f'[SPARSITY] B{i+1}: {1.0-valid_density[i]}')
+        get_mask(core, batch_idx)
+        if hasattr(core, "reset_mask"):
+            core.reset_mask()
 
-    mean_psnr = torch.stack(psnrs, 0).mean()
-    mean_ssim = torch.stack(ssims, 0).mean()
+    mean_perf_f = torch.stack(perf_fs, 0).mean()
     total_val_loss /= len(XYtest)
-    total_sparsity /= len(XYtest)   # actually density -> sparsity = 1 - total_sparsity
-    total_sparsity = 1.0 if total_sparsity==0 else total_sparsity
-
-    log_str = f'[INFO] Val PSNR: {mean_psnr:.3f} - Val SSIM: {mean_ssim:.3f} - Sparsity: {(1.0-total_sparsity):.3f} Val L: {total_val_loss}'
-    print(log_str)
     
-if __name__=='__main__':
+    print(f"[TEST] Val Loss {total_val_loss} - Val PSNR {mean_perf_f} - Val Density {density}")
+
+if __name__ == '__main__':
     test()
