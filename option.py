@@ -20,6 +20,9 @@ parser.add_argument("--gamma", type=float, default=1, help="penalty factor of th
 parser.add_argument("--den_target", type=float, default=0.5, help="target density of the mask")
 parser.add_argument("--tile", type=int, default=1, help="tile size of DGNetSR module, useless for others")
 
+# SuperNet hyper-parameters
+parser.add_argument("--nblocks", type=int, default=-1, help="Number of blocks to be used")
+
 parser.add_argument("--optimizer", default="SGD", help="optimizer")
 #--sgd
 parser.add_argument("--momentum", type=float, default=0.9, help="learning rate")

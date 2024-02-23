@@ -4,6 +4,7 @@ import torch.utils.data as torchdata
 import tqdm
 import wandb
 import cv2
+import numpy as np
 
 #custom modules
 import data
@@ -49,10 +50,35 @@ def get_mask(model, id):
     for i, m in enumerate(masks):
         m = m.squeeze(0)
         m = m.permute(1, 2, 0)
-        m = m.cpu().numpy()
-        print(m)
-        cv2.imwrite(os.path.join(out_dir, f"{id}_{i}.bmp"), m)
-
+        m = m.cpu().numpy()*255
+        # print(m)
+        cv2.imwrite(os.path.join(out_dir, f"{id}_{i}.jpeg"), m)
+        
+# def get_error_map(yf, yt, id):
+#     error = torch.abs(yt - yf)
+#     error = error.squeeze(0)
+#     error = error.permute(1,2,0)
+#     error = error.cpu().numpy()
+    
+#     error = (error - error.min()) / (error.max() - error.min())
+#     print(error)
+#     error = (error*255).round()
+#     cv2.imwrite(os.path.join(out_dir, f"E_{id}.jpeg"), error)
+    
+def get_error_map(yf, yt, id):
+    error = torch.abs(yt - yf)
+    max_ = torch.amax(error, dim=(2, 3), keepdim=True)
+    min_ = torch.amin(error, dim=(2, 3), keepdim=True)
+    error = (error - min_) / (max_ - min_)
+    
+    error = error.squeeze(0)
+    error = error.permute(1,2,0)
+    
+    error = error.cpu().numpy()
+    
+    print(error.mean())
+    error = (error*255).round()
+    cv2.imwrite(os.path.join(out_dir, f"E_{id}.jpeg"), error)
 # testing
 def test():
     perf_fs = []
@@ -81,6 +107,8 @@ def test():
         perf_fs.append(perf_f.cpu())
         
         get_mask(core, batch_idx)
+        get_error_map(yf, yt, batch_idx)
+        
         if hasattr(core, "reset_mask"):
             core.reset_mask()
 

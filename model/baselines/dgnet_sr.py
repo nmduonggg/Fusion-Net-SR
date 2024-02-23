@@ -69,13 +69,14 @@ class BasicBlock(nn.Module):
         masked_s = self.mask_s(x)
         masked_s = F.interpolate(masked_s, size=[H, W], mode='nearest')
         x = self.conv1(x)
-        x = x * masked_c * masked_s if not self.training else x * masked_c
+        # x = x * masked_c * masked_s if not self.training else x * masked_c
+        x = x * masked_c + x*(1-masked_c)*masked_s
         x = self.conv2(x)
         x = x*masked_s + residual
         x = F.relu(x)
         s = x.contiguous().cpu()
         self.density = (s > 0).float().mean()
-        dense_mask = masked_c * masked_s
+        dense_mask = masked_c + (1-masked_c) * masked_s
         
         if not self.training:
             self.masked_s = masked_s

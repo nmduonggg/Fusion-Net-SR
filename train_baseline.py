@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.utils.data as torchdata
+import torch.nn.functional as F
 import tqdm
 import wandb
 
@@ -35,7 +36,7 @@ XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False
 
 # model
 arch = args.core.split("-")
-name = arch[0]
+name = args.template
 core = baseline.config(args)
 if args.weight:
     core.load_state_dict(torch.load(args.weight))
@@ -78,9 +79,10 @@ def train():
             
             train_loss = loss_func(yf, yt)
             if type(out) is list:
-                sparsity_loss = torch.square(sparsity.mean() - args.den_target)
-                # lambda_sparsity = min((epoch / 50), 1) * 0.1
-                lambda_sparsity = args.lbda     
+                # sparsity_loss = F.l1_loss(sparsity.mean(), torch.tensor(args.den_target))
+                sparsity_loss = sparsity.mean()
+                lambda_sparsity = min((epoch / 100), 1) * 0.1
+                # lambda_sparsity = args.lbda     
                 train_loss = train_loss + sparsity_loss*lambda_sparsity
                 
                 # update tau for gumbel softmax
