@@ -81,34 +81,35 @@ class BasicBlock(nn.Module):
         self.channels = channels
         self.tile = tile
         self.conv1 = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, 1, 1, bias=False), nn.ReLU(True),
-            nn.Conv2d(channels, channels, 3, 1, 1, bias=False), nn.ReLU(True)
+            nn.Conv2d(channels, channels, 3, 1, 1), nn.ReLU(True),
+            nn.Conv2d(channels, channels, 3, 1, 1), nn.ReLU(True)
             )
         self.conv2 = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, 1, 1, bias=False))
+            nn.Conv2d(channels, channels, 3, 1, 1))
         self.mask_predictor = MaskPredictor(channels)
     
     def forward(self, x):
         B, C, H, W = x.size()
         shortcut = x
-        mask = self.mask_predictor(x)
         
         x = self.conv1(x)
         x = self.conv2(x)
         x = x + shortcut
         x = F.relu(x)
+        
+        mask = self.mask_predictor(x)
             
         return [x, mask]
     
 class UpSampler(nn.Module):
     """Upsamler = Conv + PixelShuffle
     This class is hard-code for scale factor of 2"""
-    def __init__(self, n_features, scale, bias=True):
+    def __init__(self, n_features, scale):
         super().__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv2d(n_features, scale*scale, 3, 1, 1, bias=bias))
+            nn.Conv2d(n_features, scale*scale, 3, 1, 1))
         self.shuffler = nn.PixelShuffle(2)
-        self.finalizer = nn.Conv2d(1, 1, 1, 1, 0, bias=bias)
+        self.finalizer = nn.Conv2d(1, 1, 1, 1, 0)
         
     def forward(self, x):
         x = self.conv1(x)
@@ -151,11 +152,11 @@ class GumbelSoftmax(nn.Module):
 class MaskPredictor(nn.Module):
     def __init__(self, channels):
         super().__init__()
-        self.conv = nn.Conv2d(channels, 1, 1, 1, 0)
-        self.gumbel = GumbelSoftmax(tau=0.66667)
+        self.conv = nn.Sequential(
+            nn.Conv2d(channels, channels//4, 1, 1, 0), nn.Tanh(),
+            nn.Conv2d(channels//4, 1, 3, 1, 1))
     def forward(self, x):
         x = self.conv(x)
-        x = self.gumbel(x) 
         return x
     
 class SpatialAttention(nn.Module):

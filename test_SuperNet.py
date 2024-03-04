@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.utils.data as torchdata
+import torch.nn.functional as F
 import tqdm
 import wandb
 import cv2
@@ -89,7 +90,7 @@ def get_error_btw_F(yfs, id, t=1e-2):
     
     return error_track
     
-def get_error_map(yf, yt, id, block_id, t=1e-2):
+def get_error_map(yf, yt, id, block_id, mask_block, t=1e-2):
     error = torch.abs(yt - yf)
     error = error.squeeze(0)
     error = error.permute(1,2,0)
@@ -99,15 +100,33 @@ def get_error_map(yf, yt, id, block_id, t=1e-2):
     # print(error.mean())
     error = (error >= t).astype(int)
     
+    acc = None
+    if mask_block is not None:
+        mask_block = torch.sigmoid(mask_block).round()
+        mask_block = mask_block.cpu().numpy()
+        tmp_mask = mask_block.reshape(-1)
+        tmp_error = error.reshape(-1)
+        
+        acc = [1 for i in range(error.shape[0]) if tmp_error[i]==tmp_mask[i]]
+        acc = np.mean(np.array(acc))    
+        # print(acc)
+        
+        mask_block = (mask_block*255).round()
+        acc *= 100
+        
     print(f"Fail pixel in image {id} - block {block_id} - threshold {t} is {error.mean()*100:.2f}%")
     error_m = error.mean()
-    error = (error*255).round()
+    error = (error*255)
     new_out_dir = os.path.join(out_dir, "mask_to_GT")
     if not os.path.exists(new_out_dir):
         os.makedirs(new_out_dir)
     cv2.imwrite(os.path.join(new_out_dir, f"E_{id}_{block_id}.jpeg"), error)
+    if mask_block is not None:
+        cv2.imwrite(os.path.join(new_out_dir, f"Pd_{id}_{block_id}.jpeg"), mask_block)
     
+    print(f"Image {id} - block {block_id} - threshold {t} accuracy is {acc}%")
     return error_m
+
 # testing
 
 t = 5e-3
@@ -130,8 +149,7 @@ def test():
         with torch.no_grad():
             out = core(x)
         
-        density=1
-        yfs, density, logit_s = out
+        yfs, masks = out
         
         val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / 4
         perf_v_layers = [evaluation.calculate(args, yf, yt) for yf in yfs]
@@ -145,7 +163,8 @@ def test():
             error_nexts[i] += e
         
         for block_id in range(len(yfs)):
-            error_m = get_error_map(yfs[block_id], yt, batch_idx, block_id, t)
+            mask = masks.squeeze(0)[block_id, ...] if block_id < 3 else None
+            error_m = get_error_map(yfs[block_id], yt, batch_idx, block_id, mask, t)
             error_blocks[block_id] += error_m
         
         if hasattr(core, "reset_mask"):
@@ -162,7 +181,7 @@ def test():
     print("Error nexts:", error_nexts)
     print("Error blocks:", error_blocks)
     
-    print(f"[TEST] Val Loss {total_val_loss} - Val PSNR {perf_f} - Val Density {density.mean().item()}")
+    print(f"[TEST] Val Loss {total_val_loss} - Val PSNR {perf_f}")
 
 if __name__ == '__main__':
     test()

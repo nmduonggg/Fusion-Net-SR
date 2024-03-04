@@ -49,7 +49,7 @@ batch_size = args.batch_size
 epochs = args.max_epochs - args.start_epoch
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
-lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
+lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
@@ -61,10 +61,15 @@ def get_error_btw_F(yfs):
     error_track = []
     for i in range(len(yfs)):
         if i>=len(yfs)-1: continue
-        error_map = torch.abs(yfs[i+1].detach() - yfs[i].detach())
-        max_ = torch.amax(error_map, dim=(2, 3), keepdim=True)
-        min_ = torch.amin(error_map, dim=(2, 3), keepdim=True)
-        error_map = (error_map - min_) / (max_ - min_)  # scale to [0, 1]
+        high_y = yfs[i+1].contiguous()
+        low_y = yfs[i].contiguous()
+        error_map = torch.abs(high_y - low_y)
+        
+        max_ = torch.amax(error_map, dim=1, keepdim=True).to(error_map.device)
+        min_ = torch.amin(error_map, dim=1, keepdim=True).to(error_map.device)
+        eta = (torch.ones_like(max_-min_)*1e-6).to(error_map.device)
+        
+        error_map = ((error_map - min_ + eta) / (max_ - min_ + eta)).type(torch.FloatTensor)
         error_track.append(error_map)
     
     return error_track
@@ -74,6 +79,7 @@ def get_error_btw_F(yfs):
 def train():
     
     # init wandb
+    wandb.login(key="60fd0a73c2aefc531fa6a3ad0d689e3a4507f51c")
     wandb.init(
         project='Fusion-Net',
         group='SuperNet',
@@ -107,12 +113,11 @@ def train():
             l1_loss = 0.0
             for yf in yfs:
                 l1_loss = l1_loss + loss_func(yf, yt)
-            l1_loss = l1_loss * 0.25
             train_loss = train_loss + l1_loss
             
             # dense mask
-            error_maps = torch.cat(get_error_btw_F(yfs), dim=1)
-            mask_loss = F.l1_loss(masks, error_maps)
+            error_maps = torch.cat(get_error_btw_F(yfs), dim=1).cuda()
+            mask_loss = F.binary_cross_entropy_with_logits(masks, error_maps)
             mask_gamma = min((epoch/500), 1) * args.gamma if epoch >= 250 else 0
             train_loss = train_loss + mask_gamma*mask_loss
                         
@@ -149,8 +154,8 @@ def train():
                 
                 val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / 4
 
-                error_maps = torch.cat(get_error_btw_F(yfs), dim=1)
-                mask_loss = F.l1_loss(masks, error_maps)
+                error_maps = torch.cat(get_error_btw_F(yfs), dim=1).cuda()
+                mask_loss = F.binary_cross_entropy_with_logits(masks, error_maps)
                     
                 perf_v_layers = [evaluation.calculate(args, yf, yt) for yf in yfs]
                 for i, p in enumerate(perf_v_layers):
