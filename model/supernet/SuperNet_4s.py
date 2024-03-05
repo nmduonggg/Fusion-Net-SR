@@ -20,7 +20,7 @@ class SuperNet(nn.Module):
         )
         # body
         self.body = nn.ModuleList([
-            BasicBlock(32, self.tile) for _ in range(4)])
+            BasicBlock(32, self.tile, self.scale) for _ in range(4)])
         # tail
         self.tails = nn.ModuleList([
             UpSampler(32, self.scale) for _ in range(4)
@@ -45,10 +45,9 @@ class SuperNet(nn.Module):
         for i in range(4):
             x, mask = self.body[i](x)
             outs.append(x)
-            mask = F.interpolate(mask, size=[out_h, out_w], mode='nearest')
             masks.append(mask)
             
-        masks = torch.cat(masks[:3], dim=1) # skip mask of last block
+        # masks = torch.cat(masks, dim=1) # skip mask of last block
         
         outs = [self.tails[i](out) for i, out in enumerate(outs)]
         # print(masks.shape)
@@ -76,10 +75,11 @@ class SuperNet(nn.Module):
         return x, density, mask_s
         
 class BasicBlock(nn.Module):
-    def __init__(self, channels, tile):
+    def __init__(self, channels, tile, scale=2):
         super(BasicBlock, self).__init__()
         self.channels = channels
         self.tile = tile
+        self.scale = scale
         self.conv1 = nn.Sequential(
             nn.Conv2d(channels, channels, 3, 1, 1), nn.ReLU(True),
             nn.Conv2d(channels, channels, 3, 1, 1), nn.ReLU(True)
@@ -94,11 +94,12 @@ class BasicBlock(nn.Module):
         
         x = self.conv1(x)
         x = self.conv2(x)
+        
+        mask = self.mask_predictor(F.interpolate(x, size=[H*self.scale, W*self.scale], mode='nearest'))
+        
         x = x + shortcut
         x = F.relu(x)
         
-        mask = self.mask_predictor(x)
-            
         return [x, mask]
     
 class UpSampler(nn.Module):
@@ -153,8 +154,8 @@ class MaskPredictor(nn.Module):
     def __init__(self, channels):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(channels, channels//4, 1, 1, 0), nn.Tanh(),
-            nn.Conv2d(channels//4, 1, 3, 1, 1))
+            nn.Conv2d(channels, channels//4, 3, 1, 1), nn.ELU(),
+            nn.Conv2d(channels//4, 1, 3, 1, 1), nn.ELU())
     def forward(self, x):
         x = self.conv(x)
         return x
