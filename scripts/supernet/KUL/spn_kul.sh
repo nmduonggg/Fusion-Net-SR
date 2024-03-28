@@ -1,9 +1,9 @@
-python train_SuperNet_UDL.py \
-    --template SuperNet_udl \
+python train_SuperNet_KUL.py \
+    --template SuperNet_kul \
     --lbda 0.0 \
     --gamma 0.2 \
     --den_target 0.7 \
-    --cv_dir checkpoints/SUPERNET_UDL \
+    --cv_dir checkpoints/SUPERNET_KUL \
     # --nblocks 1 \
     # --lr 0.00
     # --max_load 1000

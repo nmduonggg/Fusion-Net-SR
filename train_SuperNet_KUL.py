@@ -1,3 +1,7 @@
+"""
+This training process is inspired from KULNet and Beyesian MC dropout
+"""
+
 import os
 import torch
 import torch.utils.data as torchdata
@@ -114,6 +118,20 @@ def loss_udl(yfs, re_masks, yt):
         
     return udl
 
+def loss_kul(yf, yt, mask):
+    mean = yf
+    eta = 1e-9
+    log_var = 2 * torch.log(mask+eta)
+    
+    # l1 loss
+    l1 = loss_func(yf, yt) 
+    # kl loss
+    l_kl = -0.5 * (torch.ones_like(mean) + log_var - torch.mul(mean, mean) - torch.mul(mask, mask))
+    l_kl = 0.001 * torch.mean(l_kl)
+    
+    return l1 
+    
+
 # training
 def train():
     
@@ -121,74 +139,25 @@ def train():
     wandb.login(key="60fd0a73c2aefc531fa6a3ad0d689e3a4507f51c")
     wandb.init(
         project='Fusion-Net',
-        group='SuperNet_UDL',
+        group='SuperNet_KUL',
         name=name+f'nblock{args.nblocks}_gamma{args.gamma}', 
         entity='nmduonggg',
         config=vars(args)
     )
     
     best_perf = -1e9 # psnr
+    T = 5
+    T_epoch = 500
+    T_lambda = 0.05
     
     for epoch in range(epochs):
-        total_loss = 0.0
-        perfs = [0, 0, 0, 0]
-        uncertainty = [0, 0, 0, 0]
-        train_density = 0.0
         track_dict = {}
         
-        core.train()
-        for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtrain), total=len(XYtrain)):
-            
-            # intialize
-            x  = x.cuda()
-            yt = yt.cuda()
-            train_loss = 0.0
-            
-            # inference
-            out = core(x)   # outs, density, mask
-            yfs, masks = out
-            
-            perf_layers = [evaluation.calculate(args, yf, yt) for yf in yfs]
-            
-            l1_loss = 0.0
-            for yf in yfs:
-                l1_loss = l1_loss + loss_func(yf, yt)
-            # train_loss = train_loss + l1_loss
-            
-            # dense mask
-            # error_maps = torch.cat(get_error_btw_F(yfs), dim=1).cuda()
-            # mask_loss = F.binary_cross_entropy_with_logits(masks, error_maps)
-            # mask_gamma = min((epoch/500), 1) * args.gamma if epoch >= 250 else 0
-            # train_loss = train_loss + mask_gamma*mask_loss
-            
-            # ESU loss
-            esu = loss_esu(yfs, masks, yt)
-            if epoch < 500: train_loss = train_loss + esu   # step 1
-            else:                                           # step 2
-                rescaled = rescale_masks(masks)
-                udl = loss_udl(yfs, rescaled, yt)
-                train_loss = train_loss + udl
-                        
-            optimizer.zero_grad()
-            train_loss.backward()
-            optimizer.step()
-
-            total_loss += train_loss.item()
-            for i, p in enumerate(perf_layers):
-                perfs[i] = perfs[i] + p
-                uncertainty[i] = uncertainty[i] + torch.sigmoid(masks[i]).detach().cpu().mean()
-
-        total_loss /= len(XYtrain)
-        train_density /= len(XYtrain)
-        perfs = [p / len(XYtrain) for p in perfs]
-        uncertainty = [u / len(XYtrain) for u in uncertainty]
-        
-        
-        if (epoch+1) % args.val_each == 0:
+        if epoch % args.val_each == 0:
             perfs_val = [0, 0, 0, 0]
-            uncertainty_val = [0, 0, 0, 0]
             total_val_loss = 0.0
             total_mask_loss = 0.0
+            uncertainty = [0, 0, 0, 0]
             #walk through the test set
             core.eval()
             for m in core.modules():
@@ -201,28 +170,42 @@ def train():
                 with torch.no_grad():
                     out = core(x)
                 
-                yfs, masks = out
+                outs_mean, masks = out
+                perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
                 
-                val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / 4
+                l1_loss = 0.0
+                mask_loss = 0.0
+                lamb = 0.0 if epoch <= T_epoch else T_lambda
+                if lamb > 0: best_perf = 0 # reset
+                
+                for i, yf in enumerate(outs_mean):
+                    # l1_loss = l1_loss + loss_func(yf, yt) + 0.001*masks[i].mean()
+                    l1_loss = l1_loss + loss_func(yf, yt)
+                    # l1_loss = l1_loss + loss_func(outs_var[i], yt)
 
-                # error_maps = torch.cat(get_error_btw_F(yfs), dim=1).cuda()
-                # mask_loss = F.binary_cross_entropy_with_logits(masks, error_maps)
+                    if lamb > 0:
+                        core.train()
+                        MC_stds = core.creat_MC_std(x, T)
+                        mask_loss = mask_loss + loss_func(masks[i], MC_stds[i].cuda())
+                        core.eval()
                     
-                perf_v_layers = [evaluation.calculate(args, yf, yt) for yf in yfs]
-                for i, p in enumerate(perf_v_layers):
-                    perfs_val[i] = perfs_val[i] + p
-                    uncertainty_val[i] = uncertainty_val[i] + masks[i].contiguous().cpu().mean()
-                total_val_loss += val_loss
-                # total_mask_loss += mask_loss
+                val_loss = l1_loss + lamb * mask_loss
+                total_val_loss += val_loss.item() if torch.is_tensor(val_loss) else val_loss
+                total_mask_loss += mask_loss.item() if torch.is_tensor(mask_loss) else mask_loss
+                
+                for i, p in enumerate(perf_layers_mean):
+                    perfs_val[i] += p
+                    uncertainty[i] += masks[i].cpu().detach().mean().item()
 
             perfs_val = [p / len(XYtest) for p in perfs_val]
-            uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
+            uncertainty = [u / len(XYtest) for u in uncertainty]
             total_val_loss /= len(XYtest)
             total_mask_loss /= len(XYtest)
 
             for i, p in enumerate(perfs_val):
                 track_dict["val_perf_"+str(i)] = p
-                track_dict["val_unc_"+str(i)] = uncertainty_val[i]
+                track_dict["val_unc_"+str(i)] = uncertainty[i]
+                
             track_dict["val_l1_loss"] = total_val_loss
             track_dict["val_mask_loss"] = total_mask_loss
 
@@ -231,17 +214,67 @@ def train():
             # torch.save(core.state_dict(), os.path.join(out_dir, f'E_%d_P_%.3f.t7' % (epoch, mean_perf_f)))
             
             if perfs_val[-1] > best_perf:
+                
                 best_perf = perfs_val[-1]
-                torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
+                if lamb > 0.0:
+                    torch.save(core.state_dict(), os.path.join(out_dir, '_best_wunc.t7'))
+                else:
+                    torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
                 print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+        
+        # start training 
+        
+        total_loss = 0.0
+        total_mask_loss = 0.0
+        perfs = [0, 0, 0, 0]
+        uncertainty = [0, 0, 0, 0]
+        
+        core.train()
+        for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtrain), total=len(XYtrain)):
+            
+            # intialize
+            x  = x.cuda()
+            yt = yt.cuda()
+            train_loss = 0.0
+            
+            # inference
+            out = core(x)   # outs, density, mask
+            outs_mean, masks = out
+            
+            perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
+            
+            l1_loss = 0.0
+            mask_loss = 0.0
+            lamb = 0.0 if epoch <= T_epoch else T_lambda
+            for i, yf in enumerate(outs_mean):
+                # l1_loss = l1_loss + loss_func(yf, yt) + 0.001*masks[i].mean()
+                l1_loss = l1_loss + loss_func(yf, yt)
+                # l1_loss = l1_loss + loss_func(outs_var[i], yt)
+            
+                if lamb > 0.0:
+                    MC_stds = core.creat_MC_std(x, T)
+                    mask_loss = mask_loss + loss_func(masks[i], MC_stds[i].cuda())
+            
+            train_loss = l1_loss + lamb * mask_loss
+            optimizer.zero_grad()
+            train_loss.backward()
+            optimizer.step()
+
+            total_loss += train_loss.item() if torch.is_tensor(train_loss) else train_loss
+            total_mask_loss += mask_loss.item() if torch.is_tensor(mask_loss) else mask_loss
+            for i, p in enumerate(perf_layers_mean):
+                perfs[i] = perfs[i] + p
+                uncertainty[i] = uncertainty[i] + (masks[i]).detach().cpu().mean()
+
+        total_loss /= len(XYtrain)
+        perfs = [p / len(XYtrain) for p in perfs]
+        uncertainty = [u / len(XYtrain) for u in uncertainty]
         
         for i, p in enumerate(perfs):
             track_dict["perf_"+str(i)] = p
-            track_dict["unc_"+str(i)] = uncertainty[i]
         track_dict["train_loss"] = total_loss
-        track_dict["train_density"] = train_density
         
-        log_str = '[INFO] E: %d | LOSS: %.3f | Density: %.3f | Uncertainty: %.3f' % (epoch, total_loss, train_density, uncertainty[-1])
+        log_str = '[INFO] E: %d | LOSS: %.3f | Uncertainty: %.3f' % (epoch, total_loss, uncertainty[-1])
         print(log_str)
         
         wandb.log(track_dict)

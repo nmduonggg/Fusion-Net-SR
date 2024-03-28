@@ -6,9 +6,9 @@ from torch.autograd import Variable
 
 import math
 
-class SuperNet(nn.Module):
+class SuperNet_udl(nn.Module):
     def __init__(self, scale: int=2, tile:int=2):
-        super(SuperNet, self).__init__()
+        super(SuperNet_udl, self).__init__()
 
         self.tile = tile
         self.scale = scale
@@ -44,7 +44,9 @@ class SuperNet(nn.Module):
         
         for i in range(4):
             x, mask = self.body[i](x)
+            small_mask = F.interpolate(mask, size=[x.shape[2], x.shape[3]], mode='nearest')
             outs.append(x)
+            x = x*torch.sigmoid(small_mask)
             masks.append(mask)
             
         # masks = torch.cat(masks, dim=1) # skip mask of last block
@@ -87,7 +89,7 @@ class BasicBlock(nn.Module):
         self.conv2 = nn.Sequential(
             nn.Conv2d(channels, channels, 3, 1, 1))
         self.mask_predictor = MaskPredictor(channels)
-    
+
     def forward(self, x):
         B, C, H, W = x.size()
         shortcut = x
@@ -95,12 +97,12 @@ class BasicBlock(nn.Module):
         x = self.conv1(x)
         x = self.conv2(x)
         
-        mask = self.mask_predictor(F.interpolate(x, size=[H*self.scale, W*self.scale], mode='nearest'))
+        variance = self.mask_predictor(F.interpolate(x, size=[H*self.scale, W*self.scale], mode='nearest'))
         
         x = x + shortcut
         x = F.relu(x)
         
-        return [x, mask]
+        return [x, variance]
     
 class UpSampler(nn.Module):
     """Upsamler = Conv + PixelShuffle
@@ -154,8 +156,8 @@ class MaskPredictor(nn.Module):
     def __init__(self, channels):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(channels, channels//4, 3, 1, 1), nn.ELU(),
-            nn.Conv2d(channels//4, 1, 3, 1, 1))
+            nn.Conv2d(channels, channels//4, 3, 1, 1), nn.ELU(alpha=2),
+            nn.Conv2d(channels//4, 1, 3, 1, 1), nn.ELU(alpha=2))
     def forward(self, x):
         x = self.conv(x)
         return x

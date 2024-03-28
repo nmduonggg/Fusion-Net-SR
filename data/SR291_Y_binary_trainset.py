@@ -42,26 +42,26 @@ class SR291_Y_binary_trainset(Dataset):
         self.lr_patch_size = lr_patch_size
         self.scale = scale
         
-        X = np.zeros([n_sample, 1, lr_patch_size      , lr_patch_size      ])
-        Y = np.zeros([n_sample, 1, lr_patch_size*scale, lr_patch_size*scale])
+        # X = np.zeros([n_sample, 1, lr_patch_size      , lr_patch_size      ])
+        # Y = np.zeros([n_sample, 1, lr_patch_size*scale, lr_patch_size*scale])
 
-        for i in tqdm.tqdm(range(n_sample//2)):
-            im_file_name = root + 'im_' + str(i)
-            X[i,:,:,:] = np.reshape(np.fromfile(im_file_name, dtype=np.float32), [1, lr_patch_size      , lr_patch_size      ])
+        # for i in tqdm.tqdm(range(n_sample//2)):
+        #     im_file_name = root + 'im_' + str(i)
+        #     X[i,:,:,:] = np.reshape(np.fromfile(im_file_name, dtype=np.float32), [1, lr_patch_size      , lr_patch_size      ])
                 
-            gt_file_name = root + 'gt_' + str(i)
-            Y[i,:,:,:] = np.reshape(np.fromfile(gt_file_name, dtype=np.float32), [1, lr_patch_size*scale, lr_patch_size*scale])
+        #     gt_file_name = root + 'gt_' + str(i)
+        #     Y[i,:,:,:] = np.reshape(np.fromfile(gt_file_name, dtype=np.float32), [1, lr_patch_size*scale, lr_patch_size*scale])
 
-        self.X = torch.Tensor(X).type(torch.FloatTensor)
-        self.Y = torch.Tensor(Y).type(torch.FloatTensor)
+        # self.X = torch.Tensor(X).type(torch.FloatTensor)
+        # self.Y = torch.Tensor(Y).type(torch.FloatTensor)
         
     def __len__(self):
         return self.n_sample
 
     def __getitem__(self, idx):
         
-        if idx < self.n_sample//2:
-            return self.X[idx], self.Y[idx]
+        # if idx < self.n_sample//2:
+        #     return self.X[idx], self.Y[idx]
         
         im_file_name = self.root + 'im_' + str(idx)
         im = np.reshape(np.fromfile(im_file_name, dtype=np.float32), [1, self.lr_patch_size      , self.lr_patch_size      ])

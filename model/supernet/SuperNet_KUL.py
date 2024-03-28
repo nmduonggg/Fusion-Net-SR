@@ -6,9 +6,9 @@ from torch.autograd import Variable
 
 import math
 
-class SuperNet(nn.Module):
+class SuperNet_kul(nn.Module):
     def __init__(self, scale: int=2, tile:int=2):
-        super(SuperNet, self).__init__()
+        super(SuperNet_kul, self).__init__()
 
         self.tile = tile
         self.scale = scale
@@ -43,36 +43,57 @@ class SuperNet(nn.Module):
         outs = []
         
         for i in range(4):
-            x, mask = self.body[i](x)
+            x, std = self.body[i](x)
             outs.append(x)
-            masks.append(mask)
+            masks.append(std)
             
         # masks = torch.cat(masks, dim=1) # skip mask of last block
         
-        outs = [self.tails[i](out) for i, out in enumerate(outs)]
+        outs_mean = [self.tails[i](out) for i, out in enumerate(outs)]
         # print(masks.shape)
-        return [outs, masks]
+        return [outs_mean, masks]
     
-    def forward_by_stage(self, x, nblocks):
+    def creat_MC_std(self, x, T):
+        feat = self.heads(x)
+        
+        MC_outs = [[] for i in range(4)]
+        with torch.no_grad():
+            for t in range(T):
+                x = feat    # restart
+                for i in range(4):
+                    x, _ = self.body[i](x)
+                    MC_outs[i].append(self.tails[i](x).detach().cpu())
+                
+        MC_outs = [torch.stack(MC_out, dim=0) for MC_out in MC_outs]   # [TxBxCxHxW]x4 
+        MC_std = [torch.std(MC_out, dim=0) for MC_out in MC_outs]   # -> [BxCxHxW]x4
+        
+        return MC_std
+    
+    def fuse_2_blocks(self, x, idxs, keep):
+        """Fuse 2 blocks theoretically
+
+        Args:
+            idxs (list): List of indices of blocks
+            keep (float): keep rate of 1st image
+
+        Returns:
+            out: fused image
         """
-        Forward by block stage
-        ::in
-            x: input tensor
-            stage_id: end id of block
-        ::out
-            x: output tensor
-            density: density value in range [0, 1]
-            mask_s: spatial mask prediction
-        """
-        out_h, out_w = x.size(2)*self.scale, x.size(3)*self.scale
-        if nblocks==-1: nblocks = len(self.body)
-        assert nblocks <= len(self.body) and nblocks > 0, f"Max number of block is {len(self.body)}, got {nblocks}"
-        x = self.heads(x)
-        for idx in range(nblocks):
-            x, density, mask_s = self.body[idx](x)
-        x = self.tails(x)
-        mask_s = F.interpolate(mask_s, size=[out_h, out_w], mode="nearest")
-        return x, density, mask_s
+        assert 0 <= keep <= 1
+        assert len(idxs)==2
+        with torch.no_grad():
+            yfs, masks = self.forward(x)
+        # percentile filter - get the r% pixels with highest uncertainty
+        hard_mask = masks[idxs[0]].clone().cpu().numpy()
+        hard_mask = (hard_mask > np.percentile(hard_mask, keep*100)).astype(int)
+        hard_mask = torch.tensor(hard_mask)
+            
+        hm = hard_mask.to(yfs[0].device)
+        y = yfs[idxs[0]] * (1-hm) + yfs[idxs[1]] * hm
+        
+        return y
+            
+        
         
 class BasicBlock(nn.Module):
     def __init__(self, channels, tile, scale=2):
@@ -87,20 +108,18 @@ class BasicBlock(nn.Module):
         self.conv2 = nn.Sequential(
             nn.Conv2d(channels, channels, 3, 1, 1))
         self.mask_predictor = MaskPredictor(channels)
-    
+
     def forward(self, x):
         B, C, H, W = x.size()
         shortcut = x
         
         x = self.conv1(x)
         x = self.conv2(x)
-        
-        mask = self.mask_predictor(F.interpolate(x, size=[H*self.scale, W*self.scale], mode='nearest'))
-        
         x = x + shortcut
         x = F.relu(x)
+        variance = self.mask_predictor(F.interpolate(x, size=[H*self.scale, W*self.scale], mode='nearest'))
         
-        return [x, mask]
+        return [x, variance]
     
 class UpSampler(nn.Module):
     """Upsamler = Conv + PixelShuffle
@@ -109,10 +128,12 @@ class UpSampler(nn.Module):
         super().__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(n_features, scale*scale, 3, 1, 1))
+        self.dropout = nn.Dropout(p=0.01)
         self.shuffler = nn.PixelShuffle(2)
         self.finalizer = nn.Conv2d(1, 1, 1, 1, 0)
         
     def forward(self, x):
+        x = self.dropout(x)
         x = self.conv1(x)
         x = self.shuffler(x)
         x = self.finalizer(x)
@@ -154,10 +175,10 @@ class MaskPredictor(nn.Module):
     def __init__(self, channels):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(channels, channels//4, 3, 1, 1), nn.ELU(),
-            nn.Conv2d(channels//4, 1, 3, 1, 1))
+            nn.Conv2d(channels, 1, 3, 1, 1))
+        
     def forward(self, x):
-        x = self.conv(x)
+        x = self.conv(x) 
         return x
     
 class SpatialAttention(nn.Module):
@@ -220,12 +241,4 @@ class ChannelAttention(nn.Module):
         mask_c = self.gate_c(c_in) # [N, C_out, 1, 1]
         
         return mask_c, c_in
-    
-    
-if __name__=='__main__':
-    from utils import calc_flops
-    model = DGNetSR(2, 1)
-    # model.load_state_dict(torch.load('/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/DGNet/_best.t7', map_location='cpu'))
-    calc_flops(model)
-    
     

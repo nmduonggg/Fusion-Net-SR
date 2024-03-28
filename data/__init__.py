@@ -16,6 +16,8 @@ from data.SetN_Y_binary_testset import SetN_Y_binary_testset
 from data.SR291_trainset import SR291_trainset
 from data.SR291_Y_binary_trainset import SR291_Y_binary_trainset
 from data.Set14_RGB_testset import Set14_RGB_testset
+from data.BSD100_testset import BSD100_Y_binary_testset
+from data.SR291_Y_testset import SR291_Y_testset
 
 def load_trainset(args):
     tag = args.trainset_tag
@@ -39,6 +41,10 @@ def load_testset(args):
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
         return SetN_Y_binary_testset(args.testset_dir, 14, scale=args.scale), batch_size_test
+    elif tag== 'BSD100' and args.style=='Y':
+        print('[WARN] RGB range (<rgb_range>) set to 1.0')
+        batch_size_test = 1
+        return BSD100_Y_binary_testset(args.testset_dir, 100, scale=args.scale), batch_size_test
     elif tag=='Set14RGB' and args.style=='RGB':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
@@ -52,6 +58,9 @@ def load_testset(args):
     elif tag == 'DIV2K-valid':
         batch_size_test = 1
         return DIV2K_validset(args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test
+    elif tag == 'SR291-test':
+        batch_size_test=1
+        return SR291_Y_testset(args.testset_dir, max_load=args.max_load), batch_size_test
     else:
         print('[ERRO] unknown tag and/or style for testset')
         assert(0)
