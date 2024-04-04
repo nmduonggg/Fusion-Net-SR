@@ -57,7 +57,7 @@ lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
-out_dir = os.path.join(args.cv_dir, name+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}')
+out_dir = os.path.join(args.cv_dir, name+f'_nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}')
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
     
@@ -78,25 +78,6 @@ def get_error_btw_F(yfs):
     
     return error_track
 
-def loss_esu(yfs, masks, yt):
-    assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
-    esu = 0.0
-    scale = [0.01, 0.01, 0.01, 0.01]
-    for i in range(len(yfs)):
-        yf, mask = yfs[i], masks[i]
-        
-        s = torch.exp(-mask) + mask*scale[i] 
-        yf = torch.mul(yf, s)
-        yt = torch.mul(yt, s)
-        l1_loss = loss_func(yf, yt)
-        esu = esu + l1_loss
-
-        # print(f"scaled L1 {i}", l1_loss.detach())
-        esu = esu + scale[i]*mask.mean()*0.01
-        # print(f"variance {i}", mask.detach().mean())
-        
-    return esu
-
 def rescale_masks(masks):
     new_masks = []
     for m in masks:
@@ -106,17 +87,6 @@ def rescale_masks(masks):
         new_masks.append(m)
     
     return new_masks
-        
-def loss_udl(yfs, re_masks, yt):
-    assert len(yfs) == len(re_masks)
-    udl = 0.0
-    for i in range(len(yfs)):
-        yf, mask = yfs[i], re_masks[i]
-        yf = torch.mul(yf, mask)
-        yt = torch.mul(yt, mask)
-        udl = udl + loss_func(yf, yt)
-        
-    return udl
 
 def loss_kul(yf, yt, mask):
     mean = yf
@@ -140,15 +110,15 @@ def train():
         wandb.login(key="60fd0a73c2aefc531fa6a3ad0d689e3a4507f51c")
         wandb.init(
             project='Fusion-Net',
-            group='SuperNet_KUL',
-            name=name+f'nblock{args.nblocks}_gamma{args.gamma}', 
+            group=name,
+            name=name+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', 
             entity='nmduonggg',
             config=vars(args)
         )
     
     best_perf = -1e9 # psnr
     T = 5
-    T_epoch = 500
+    T_epoch = 5
     T_lambda = 0.05
     
     for epoch in range(epochs):
@@ -278,7 +248,10 @@ def train():
         log_str = '[INFO] E: %d | LOSS: %.3f | Uncertainty: %.3f' % (epoch, total_loss, uncertainty[-1])
         print(log_str)
         
-        if args.wandb: wandb.log(track_dict)
+        if args.wandb: 
+            wandb.log(track_dict)
+            
+        # save
         torch.save(core.state_dict(), os.path.join(out_dir, '_last.t7'))
         
 if __name__ == '__main__':

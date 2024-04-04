@@ -52,3 +52,6 @@ parser.add_argument("--cv_dir", default="checkpoints", help="checkpoint director
 parser.add_argument("--analyze_dir", default="ANALYZE", help="Directory for analyze and visualize")
 #template
 parser.add_argument("--template", default=None)
+
+# wandb
+parser.add_argument("--wandb", action="store_true")

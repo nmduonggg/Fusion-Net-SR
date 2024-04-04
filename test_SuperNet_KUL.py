@@ -104,8 +104,9 @@ def visualize_unc_map(masks, id, val_perfs):
     os.makedirs(new_out_dir, exist_ok=True)
     save_file = os.path.join(new_out_dir, f"img_{id}_mask.jpeg")
     
-    masks_np = process_unc_map(masks, False, False, False)
-    masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
+    # masks_np = process_unc_map(masks, False, False, False)
+    # masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
+    masks_np_percentile = process_unc_map(masks)
     
     fig, axs = plt.subplots(1, len(masks_np_percentile), 
                             tight_layout=True, figsize=(60, 20))

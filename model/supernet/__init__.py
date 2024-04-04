@@ -1,6 +1,7 @@
 from .SuperNet_4s import SuperNet
-from .SuperNet_udl import SuperNet_udl
 from .SuperNet_KUL import SuperNet_kul
+from .SuperNet_share import SuperNet_share
+from .SuperNet_depend import SuperNet_depend
 
 def config(args):
     arch = args.core.split("-")
@@ -12,5 +13,9 @@ def config(args):
         return SuperNet_udl()
     elif name=='SuperNet_kul':
         return SuperNet_kul()
+    elif name=='SuperNet_share':
+        return SuperNet_share()
+    elif name=='SuperNet_depend':
+        return SuperNet_depend()
     else:
         assert(0), 'No configuration found'
