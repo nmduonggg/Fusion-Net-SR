@@ -196,7 +196,7 @@ def set_template(args):
 		args.lr=1e-4
 		args.lr_decay_ratio=0.5
 		args.weight_decay=0
-		args.batch_size=512
+		args.batch_size=256
 		args.epoch_step=100
 		args.val_each=2
 		args.max_epochs=1000
@@ -211,6 +211,7 @@ def set_template(args):
 		args.rgb_range=1.0
 		args.scale=2
 		args.core='SuperNet_udl'
+		# args.weight='/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SUPERNET_UDL/SuperNet_udlnblock-1_lbda0.0_gamma0.2_den1.0/_last.t7'
 		print(vars(args))
 	elif  args.template == 'SuperNet_kul':
 			print('[INFO] Template found (UDL-like SR)')
@@ -232,7 +233,7 @@ def set_template(args):
 			args.rgb_range=1.0
 			args.scale=2
 			args.core='SuperNet_kul'
-			# args.weight='/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SUPERNET_KUL/SuperNet_kulnblock-1_lbda0.0_gamma0.2_den0.7/_last.t7'
+			# args.weight='/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SUPERNET_KUL/SuperNet_kulnblock-1_lbda0.0_gamma0.2_den2.0/_last.t7'
 			print(vars(args))
 	elif  args.template == 'SuperNet_share':
 			print('[INFO] Template found (Parameter-Sharing SR)')
@@ -248,13 +249,36 @@ def set_template(args):
 			args.style='Y'
 			args.trainset_tag='SR291B'
 			args.trainset_patch_size=21
-			args.trainset_dir='/mnt/disk4/nmduong/FusionNet/data/2x/'
+			args.trainset_dir='/mnt/disk1/nmduong/FusionNet/data/2x/'
 			args.testset_tag='Set14B'
-			args.testset_dir='/mnt/disk4/nmduong/FusionNet/data/set14_dnb/2x/'
+			args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
 			args.rgb_range=1.0
 			args.scale=2
 			args.core='SuperNet_share'
-			args.weight='/mnt/disk4/nmduong/FusionNet/Fusion-Net-SR/checkpoints/SUPERNET_SHARE/SuperNet_share_nblock-1_lbda0.0_gamma0.2_den1.0/_last.t7'
+			args.weight='/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SUPERNET_SHARE/SuperNet_share_nblock-1_lbda0.0_gamma0.2_den1.0/_last.t7'
+			print(vars(args))
+   
+	elif  args.template == 'SuperNet_separate':
+			print('[INFO] Template found (Separate SR)')
+			args.lr=1e-4
+			args.lr_decay_ratio=0.5
+			args.weight_decay=0
+			args.batch_size=256
+			args.epoch_step=100
+			args.val_each=2
+			args.max_epochs=1000
+			args.loss='L1'
+			# args.max_load=0
+			args.style='Y'
+			args.trainset_tag='SR291B'
+			args.trainset_patch_size=21
+			args.trainset_dir='/mnt/disk1/nmduong/FusionNet/data/2x/'
+			args.testset_tag='Set14B'
+			args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
+			args.rgb_range=1.0
+			args.scale=2
+			args.core='SuperNet_separate'
+			# args.weight='/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SUPERNET_KUL/SuperNet_kulnblock-1_lbda0.0_gamma0.2_den2.0/_last.t7'
 			print(vars(args))
    
 	elif  args.template == 'SuperNet_depend':
@@ -271,13 +295,13 @@ def set_template(args):
 			args.style='Y'
 			args.trainset_tag='SR291B'
 			args.trainset_patch_size=21
-			args.trainset_dir='/mnt/disk4/nmduong/FusionNet/data/2x/'
+			args.trainset_dir='/mnt/disk1/nmduong/FusionNet/data/2x/'
 			args.testset_tag='Set14B'
-			args.testset_dir='/mnt/disk4/nmduong/FusionNet/data/set14_dnb/2x/'
+			args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
 			args.rgb_range=1.0
 			args.scale=2
 			args.core='SuperNet_depend'
-			# args.weight='/mnt/disk4/nmduong/FusionNet/Fusion-Net-SR/checkpoints/SUPERNET_SHARE/SuperNet_share_nblock-1_lbda0.0_gamma0.2_den1.0/_last.t7'
+			# args.weight='/mnt/disk1/nmduong/FusionNet/Fusion-Net-SR/checkpoints/SUPERNET_SHARE/SuperNet_share_nblock-1_lbda0.0_gamma0.2_den1.0/_last.t7'
 			print(vars(args))
 	else:
 		print('[ERRO] Template not found')

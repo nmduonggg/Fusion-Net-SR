@@ -36,15 +36,15 @@ def load_testset(args):
     if tag == 'Set5B' and args.style == 'Y':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
-        return SetN_Y_binary_testset(args.testset_dir, 5, scale=args.scale), batch_size_test
+        return SetN_Y_binary_testset(args.testset_dir, args.N, scale=args.scale), batch_size_test
     elif tag == 'Set14B' and args.style == 'Y':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
-        return SetN_Y_binary_testset(args.testset_dir, 14, scale=args.scale), batch_size_test
+        return SetN_Y_binary_testset(args.testset_dir, args.N, scale=args.scale), batch_size_test
     elif tag== 'BSD100' and args.style=='Y':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
-        return BSD100_Y_binary_testset(args.testset_dir, 100, scale=args.scale), batch_size_test
+        return BSD100_Y_binary_testset(args.testset_dir, args.N, scale=args.scale), batch_size_test
     elif tag=='Set14RGB' and args.style=='RGB':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1

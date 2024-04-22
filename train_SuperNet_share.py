@@ -28,7 +28,7 @@ if args.template is not None:
 
 print('[INFO] load trainset "%s" from %s' % (args.trainset_tag, args.trainset_dir))
 trainset = data.load_trainset(args)
-XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=32)
+XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
 n_sample = len(trainset)
 print('[INFO] trainset contains %d samples' % (n_sample))
@@ -36,7 +36,7 @@ print('[INFO] trainset contains %d samples' % (n_sample))
 # load test data
 print('[INFO] load testset "%s" from %s' % (args.testset_tag, args.testset_dir))
 testset, batch_size_test = data.load_testset(args)
-XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=8)
+XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=0, pin_memory=True)
 
 # model
 arch = args.core.split("-")
@@ -71,7 +71,7 @@ def get_error_btw_F(yfs):
         
         max_ = torch.amax(error_map, dim=1, keepdim=True).to(error_map.device)
         min_ = torch.amin(error_map, dim=1, keepdim=True).to(error_map.device)
-        eta = (torch.ones_like(max_-min_)*1e-6).to(error_map.device)
+        eta = (torch.ones_like(max_-min_)*1e-8).to(error_map.device)
         
         error_map = ((error_map - min_ + eta) / (max_ - min_ + eta)).type(torch.FloatTensor)
         error_track.append(error_map)
@@ -117,8 +117,9 @@ def train():
         )
     
     best_perf = -1e9 # psnr
+    best_perf_unc = -1e9
     T = 5
-    T_epoch = 5
+    T_epoch = 0
     T_lambda = 0.05
     
     for epoch in range(epochs):
@@ -147,7 +148,6 @@ def train():
                 l1_loss = 0.0
                 mask_loss = 0.0
                 lamb = 0.0 if epoch <= T_epoch else T_lambda
-                if lamb > 0: best_perf = 0 # reset
                 
                 for i, yf in enumerate(outs_mean):
                     # l1_loss = l1_loss + loss_func(yf, yt) + 0.001*masks[i].mean()
@@ -184,14 +184,18 @@ def train():
             print(log_str)
             # torch.save(core.state_dict(), os.path.join(out_dir, f'E_%d_P_%.3f.t7' % (epoch, mean_perf_f)))
             
-            if perfs_val[-1] > best_perf:
+            if lamb > 0.0:
+                if perfs_val[-1] > best_perf_unc:
                 
-                best_perf = perfs_val[-1]
-                if lamb > 0.0:
+                    best_perf_unc = perfs_val[-1]
                     torch.save(core.state_dict(), os.path.join(out_dir, '_best_wunc.t7'))
-                else:
+                    print('[INFO] Save best uncertainty performance model %d with performance %.3f' % (epoch, best_perf_unc))
+
+            else:
+                if perfs_val[-1] > best_perf:
+                    best_perf = perfs_val[-1]
                     torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
-                print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
         
         # start training 
         

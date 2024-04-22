@@ -35,7 +35,7 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    args.weight = os.path.join(args.cv_dir, "SUPERNET_KUL", args.template+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', '_last.t7')
+    args.weight = os.path.join(args.cv_dir, "SUPERNET_UDL", args.template+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', '_best.t7')
     # args.weight='/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SUPERNET_KUL/SuperNet_kulnblock-1_lbda0.0_gamma0.2_den0.7/_last.t7'
     print(f"[INFO] Load weight from {args.weight}")
     core.load_state_dict(torch.load(args.weight))
@@ -44,15 +44,12 @@ core.cuda()
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
-out_dir = os.path.join(args.analyze_dir, "SUPERNET_KUL", name+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', args.testset_tag)
+out_dir = os.path.join(args.analyze_dir, "SUPERNET_UDL", name+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', args.testset_tag)
 print('Load from: ', out_dir)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
     
 def gray2heatmap(image):
-    # colormap = plt.get_cmap('inferno')
-    # heatmap = (colormap(image) * 2**16).astype(np.uint16)[:,:,:3]
-    # heatmap = cv2.cvtColor(heatmap, cv2.COLOR_RGB2BGR)
     heatmap = cv2.applyColorMap(image, cv2.COLORMAP_JET)
     
     return heatmap
@@ -67,15 +64,21 @@ def get_mask(model, id):
         # print(m)
         cv2.imwrite(os.path.join(out_dir, f"{id}_{i}.jpeg"), m)
         
-def process_unc_map(masks, to_heatmap=True, rescale=True, abs=True):
+def process_unc_map(masks, to_heatmap=True, 
+                    rescale=True, abs=True, 
+                    amplify=False, scale_independent=False):
     """
     use for mask with value range [-1, inf]
     apply sigmoid and rescale
     """      
     masks = torch.stack(masks, dim=0)
-    if abs: 
+        
+    if abs:
         # masks = masks.abs()
+        # masks = torch.exp(masks)
         masks = torch.exp(masks)
+        # if amplify:
+        #     masks = 1+torch.exp(masks)
     
     pmin = torch.min(masks)
     pmax = torch.max(masks)
@@ -84,16 +87,41 @@ def process_unc_map(masks, to_heatmap=True, rescale=True, abs=True):
     for i in range(4):
         # mask = torch.abs(mask)
         mask = masks[i, ...]
-        pmin = torch.min(mask)    
-        pmax = torch.max(mask)
+        if scale_independent: 
+            pmin = torch.min(mask)    
+            pmax = torch.max(mask)
         
         # print(f'Mask {i}:', torch.mean(mask))
         if rescale:
             mask = (mask - pmin) / (pmax - pmin)
+        
         mask = mask.squeeze(0).permute(1,2,0)
         agg_mask += mask
         mask = mask.cpu().numpy()
-        # mask = mask.round()
+        if amplify:
+            # mask = masks[i,...].squeeze(0).permute(1,2,0).cpu().numpy()
+            # Q1 = np.percentile(mask, 25)
+            # Q3 = np.percentile(mask, 75)
+            # IQR = Q3 - Q1
+
+            # # Compute lower and upper bounds to filter outliers
+            # lower_bound = Q1 - 1.5 * IQR
+            # upper_bound = Q3 + 1.5 * IQR
+
+            # # Apply clipping to reduce the impact of outliers
+            # mask = np.clip(mask, lower_bound, upper_bound)
+            
+            # pmin = np.min(mask) 
+            # pmax = np.max(mask)  
+            # mask = (mask - pmin) / (pmax - pmin)
+            
+            mask = masks[i, ...].squeeze(0).permute(1,2,0).cpu().numpy()   
+            bool_mask = (mask <= np.percentile(mask, 99)).astype(int)
+            mask = bool_mask*mask
+            pmin = np.min(mask)
+            pmax = np.max(mask) 
+            mask = (mask - pmin) / (pmax-pmin)
+        
         if rescale:
             mask = (mask*255).round().astype(np.uint8) 
         if to_heatmap:
@@ -103,14 +131,34 @@ def process_unc_map(masks, to_heatmap=True, rescale=True, abs=True):
         
     return masks_numpy
 
-def visualize_unc_map(masks, id, val_perfs):
+def visualize_unc_map_binary(masks, id, val_perfs):
     new_out_dir = out_dir
     os.makedirs(new_out_dir, exist_ok=True)
-    save_file = os.path.join(new_out_dir, f"img_{id}_mask.jpeg")
+    save_file = os.path.join(new_out_dir, f"img_{id}_mask_binary.jpeg")
     
     # masks_np = process_unc_map(masks, False, False, False)
     # masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
-    masks_np_percentile = process_unc_map(masks)
+    masks_np_percentile = process_unc_map(masks, to_heatmap=False, rescale=True, amplify=True, abs=True)
+    
+    fig, axs = plt.subplots(1, len(masks_np_percentile), 
+                            tight_layout=True, figsize=(60, 20))
+    for i, m in enumerate(masks_np_percentile):
+        axs[i].imshow(m, cmap='gray')
+        axs[i].axis('off')
+        axs[i].set_title(f'block {i} - perf {val_perfs[i].detach().item()}')
+        
+    plt.savefig(save_file)
+    plt.close(fig)
+    plt.show()
+
+def visualize_unc_map(masks, id, val_perfs, im=False):
+    new_out_dir = out_dir
+    os.makedirs(new_out_dir, exist_ok=True)
+    save_file = os.path.join(new_out_dir, f"img_{id}_mask.jpeg" if not im else f"img_{id}_out.jpeg")
+    
+    # masks_np = process_unc_map(masks, False, False, False)
+    # masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
+    masks_np_percentile = process_unc_map(masks, scale_independent=True)
     
     fig, axs = plt.subplots(1, len(masks_np_percentile), 
                             tight_layout=True, figsize=(60, 20))
@@ -144,7 +192,7 @@ def visualize_unc_map(masks, id, val_perfs):
 
 def visualize_histogram_im(masks, id):
     
-    ims = process_unc_map(masks, False, True)
+    ims = process_unc_map(masks, to_heatmap=False, rescale=True, abs=True, amplify=False)
     new_out_dir = out_dir
     os.makedirs(new_out_dir, exist_ok=True)
     save_file = os.path.join(new_out_dir, f"img_{id}_hist.jpeg")
@@ -247,6 +295,9 @@ def visualize_error_map(yfs, yt, id):
     fig, axs = plt.subplots(1, len(ep), sharey=True, 
                             tight_layout=True, figsize=(60, 20))
     for i, e in enumerate(ep):
+        # e = (e > np.percentile(e, 75)).astype(np.uint8) * 255
+        e = cv2.applyColorMap(e, cv2.COLORMAP_JET)
+        e = cv2.cvtColor(e, cv2.COLOR_BGR2RGB)
         axs[i].imshow(e)
         axs[i].set_title(f'block {i} - error {e.mean()}')
     
@@ -282,12 +333,9 @@ def test():
         if args.visualize:
             visualize_histogram_im(masks, batch_idx)
             visualize_error_map(yfs, yt, batch_idx)
-            get_error_btw_F(yfs, batch_idx)
+            # get_error_btw_F(yfs, batch_idx)
         
         val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / 4
-
-        # error_maps = torch.cat(get_error_btw_F(yfs), dim=1).cuda()
-        # mask_loss = F.binary_cross_entropy_with_logits(masks, error_maps)
             
         perf_v_layers = [evaluation.calculate(args, yf, yt) for yf in yfs]
         unc_v_layers = [m.mean().cpu().item() for m in masks]
@@ -297,14 +345,16 @@ def test():
         
         if args.visualize:
             visualize_unc_map(masks, batch_idx, perf_v_layers)
-        # print(f'{batch_idx}: ', perf_v_layers)
+            visualize_unc_map_binary(masks, batch_idx, perf_v_layers)
+            visualize_unc_map(yfs, batch_idx, perf_v_layers, True)
+            
         for i, p in enumerate(perf_v_layers):
             perfs_val[i] = perfs_val[i] + p
             uncertainty_val[i] = uncertainty_val[i] + torch.exp(masks[i]).contiguous().cpu().mean()
         total_val_loss += val_loss
-        # total_mask_loss += mask_loss
         
-    np_fn = os.path.join(out_dir, 'psn_unc.npy')
+        
+    np_fn = os.path.join(out_dir, f'psn_unc_{args.testset_tag}.npy')
     np.save(np_fn, psnr_unc_map)
 
     perfs_val = [p / len(XYtest) for p in perfs_val]

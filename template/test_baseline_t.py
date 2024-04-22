@@ -86,8 +86,8 @@ def set_template(args):
     elif  args.template == 'SuperNet_udl':
         print('[INFO] Template found (UDL-like SR)')
         args.style='Y'
-        args.testset_tag='Set14B'
-        args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
+        # args.testset_tag='Set14B'
+        # args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
         args.rgb_range=1.0
         args.scale=2
         args.core='SuperNet_udl'
@@ -101,6 +101,24 @@ def set_template(args):
         args.scale=2
         args.core='SuperNet_kul'
         args.weight = os.path.join(args.cv_dir, "SUPERNET", args.template+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', '_best.t7')
+    elif  args.template == 'SuperNet_separate':
+        print('[INFO] Template found (Separate SR)')
+        args.style='Y'
+        # args.testset_tag='Set14B'
+        # args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
+        args.rgb_range=1.0
+        args.scale=2
+        args.core='SuperNet_separate'
+        args.weight = os.path.join(args.cv_dir, "SUPERNET", args.template+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', '_best.t7')
+    elif  args.template == 'SuperNet_share':
+        print('[INFO] Template found (params share SR)')
+        args.style='Y'
+        # args.testset_tag='Set14B'
+        # args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/set14_dnb/2x/'
+        args.rgb_range=1.0
+        args.scale=2
+        args.core='SuperNet_share'
+        args.weight = os.path.join(args.cv_dir, "SUPERNET_SHARE", args.template+f'_nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', '_best_wunc.t7')
     else:
         print('[ERRO] Template not found')
         assert(0)

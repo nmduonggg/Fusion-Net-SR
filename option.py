@@ -22,6 +22,10 @@ parser.add_argument("--tile", type=int, default=1, help="tile size of DGNetSR mo
 
 # SuperNet hyper-parameters
 parser.add_argument("--nblocks", type=int, default=-1, help="Number of blocks to be used")
+parser.add_argument("--N", type=int, default=-1, help='Number of test instances, only used in testing')
+
+# test
+parser.add_argument("--visualize", action='store_true')
 
 parser.add_argument("--optimizer", default="SGD", help="optimizer")
 #--sgd

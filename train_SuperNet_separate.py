@@ -6,8 +6,6 @@ import os
 import torch
 import torch.utils.data as torchdata
 import torch.nn.functional as F
-import numpy as np
-import cv2
 import tqdm
 import wandb
 
@@ -55,8 +53,7 @@ batch_size = args.batch_size
 epochs = args.max_epochs - args.start_epoch
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
-# lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
-# lr_scheduler = 
+lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
@@ -84,20 +81,21 @@ def get_error_btw_F(yfs):
 def loss_esu(yfs, masks, yt):
     assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
     esu = 0.0
-    scale = [0.01, 0.01, 0.01, 0.01]
+    # mean_mask = torch.mean(torch.cat(masks, dim=0), dim=0)
+    # yt = yt.repeat(mean_yf.shape[0], 1, 1, 1)
     ori_yt = yt.clone()
     for i in range(len(yfs)):
-        yf, mask = yfs[i], masks[i]
         
-        s = torch.exp(-mask) + mask*scale[i] 
+        yf = yfs[i]
+        s = torch.exp(-masks[i])
         yf = torch.mul(yf, s)
         yt = torch.mul(ori_yt, s)
         l1_loss = loss_func(yf, yt)
+        esu = esu + 2*masks[i].mean()
+        
+        l1_loss = loss_func(yf, yt)
+        
         esu = esu + l1_loss
-
-        # print(f"scaled L1 {i}", l1_loss.detach())
-        esu = esu + scale[i]*mask.mean()*0.01
-        # print(f"variance {i}", mask.detach().mean())
         
     return esu
 
@@ -110,6 +108,17 @@ def rescale_masks(masks):
         new_masks.append(m)
     
     return new_masks
+        
+def loss_udl(yfs, re_masks, yt):
+    assert len(yfs) == len(re_masks)
+    udl = 0.0
+    for i in range(len(yfs)):
+        yf, mask = yfs[i], re_masks[i]
+        yf = torch.mul(yf, mask)
+        yt = torch.mul(yt, mask)
+        udl = udl + loss_func(yf, yt)
+        
+    return udl
 
 def loss_kul(yf, yt, mask):
     mean = yf
@@ -123,7 +132,6 @@ def loss_kul(yf, yt, mask):
     l_kl = 0.001 * torch.mean(l_kl)
     
     return l1 
-    
 
 # training
 def train():
@@ -133,18 +141,16 @@ def train():
         wandb.login(key="60fd0a73c2aefc531fa6a3ad0d689e3a4507f51c")
         wandb.init(
             project='Fusion-Net',
-            group='SuperNet_KUL',
+            group='SuperNet_UDL',
             name=name+f'nblock{args.nblocks}_gamma{args.gamma}', 
             entity='nmduonggg',
             config=vars(args)
         )
     
     best_perf = -1e9 # psnr
-    T = 10
-    T_epoch = 0
-    T_lambda = 0.15
-    # lamb = 1e-9
-    lamb = T_lambda
+    T = 5
+    T_epoch = 500
+    T_lambda = 0.05
     
     for epoch in range(epochs):
         track_dict = {}
@@ -152,11 +158,9 @@ def train():
         if epoch % args.val_each == 0:
             perfs_val = [0, 0, 0, 0]
             total_val_loss = 0.0
-            total_mask_loss = 0.0
             uncertainty = [0, 0, 0, 0]
             #walk through the test set
             core.eval()
-            if epoch==T_epoch: best_perf = 0 # reset once
             for m in core.modules():
                 if hasattr(m, '_prepare'):
                     m._prepare()
@@ -170,49 +174,23 @@ def train():
                 outs_mean, masks = out
                 perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
                 
-                l1_loss = 0.0
-                mask_loss = 0.0
-                lamb = 0.0 if (epoch <= T_epoch and epoch != 0) else T_lambda
-                if lamb > 0:
-                    core.train()
-                    MC_stds = core.create_MC_std(x, T)
-            
-                for i, yf in enumerate(outs_mean):
-                    # l1_loss = l1_loss + loss_func(yf, yt) + 0.001*masks[i].mean()
-                    l1_loss = l1_loss + loss_func(yf, yt)
-                    # l1_loss = l1_loss + loss_func(outs_var[i], yt)
-                        
-                        # visualize to check 
-                        # tmp = MC_stds[0][0, ...]    # BXCxHxW
-                        # tmp = tmp.squeeze(0)
-                        # max_, min_ = torch.max(tmp), torch.min(tmp)
-                        # tmp = ((tmp - min_) / (max_ - min_))*255
-                        # tmp = tmp.cpu().numpy().round().astype(np.uint8)
-                        # cv2.imwrite('./tmp_mask.jpeg', tmp)
-                    if lamb > 0.0:
-                        std = torch.log(MC_stds[i]).cuda()
-                        mask_loss = mask_loss + loss_func(masks[i], std)
-                core.eval()
-                    
-                val_loss = l1_loss + lamb * mask_loss
+                val_loss = loss_esu(outs_mean, masks, yt)
                 total_val_loss += val_loss.item() if torch.is_tensor(val_loss) else val_loss
-                total_mask_loss += mask_loss.item() if torch.is_tensor(mask_loss) else mask_loss
                 
                 for i, p in enumerate(perf_layers_mean):
                     perfs_val[i] += p
                     uncertainty[i] += masks[i].cpu().detach().mean().item()
 
             perfs_val = [p / len(XYtest) for p in perfs_val]
+            print(perfs_val)
             uncertainty = [u / len(XYtest) for u in uncertainty]
             total_val_loss /= len(XYtest)
-            total_mask_loss /= len(XYtest)
 
             for i, p in enumerate(perfs_val):
                 track_dict["val_perf_"+str(i)] = p
                 track_dict["val_unc_"+str(i)] = uncertainty[i]
                 
             track_dict["val_l1_loss"] = total_val_loss
-            track_dict["val_mask_loss"] = total_mask_loss
 
             log_str = f'[INFO] Epoch {epoch} - Val L: {total_val_loss}'
             print(log_str)
@@ -221,16 +199,12 @@ def train():
             if perfs_val[-1] > best_perf:
                 
                 best_perf = perfs_val[-1]
-                if lamb > 0.0:
-                    torch.save(core.state_dict(), os.path.join(out_dir, '_best_wunc.t7'))
-                else:
-                    torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
+                torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
                 print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
         
         # start training 
         
         total_loss = 0.0
-        total_mask_loss = 0.0
         perfs = [0, 0, 0, 0]
         uncertainty = [0, 0, 0, 0]
         
@@ -248,29 +222,14 @@ def train():
             
             perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
             
-            l1_loss = 0.0
-            mask_loss = 0.0
-            lamb = 0.0 if (epoch <= T_epoch and epoch != 0) else T_lambda   # epoch=0, run MC dropout to allocate enough GPU later
+            train_loss = loss_esu(outs_mean, masks, yt)
             
-            if lamb > 0.0:
-                MC_stds = core.create_MC_std(x, T)
-            
-            for i, yf in enumerate(outs_mean):
-                # l1_loss = l1_loss + loss_func(yf, yt) + 0.001*masks[i].mean()
-                l1_loss = l1_loss + loss_func(yf, yt)
-                # l1_loss = l1_loss + loss_func(outs_var[i], yt)
-            
-                if lamb > 0.0:
-                    std = torch.log(MC_stds[i]).cuda()
-                    mask_loss = mask_loss + loss_func(masks[i], std)
-            
-            train_loss = l1_loss + lamb * mask_loss
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
 
             total_loss += train_loss.item() if torch.is_tensor(train_loss) else train_loss
-            total_mask_loss += mask_loss.item() if torch.is_tensor(mask_loss) else mask_loss
+            
             for i, p in enumerate(perf_layers_mean):
                 perfs[i] = perfs[i] + p
                 uncertainty[i] = uncertainty[i] + (masks[i]).detach().cpu().mean()
@@ -289,5 +248,5 @@ def train():
         if args.wandb: wandb.log(track_dict)
         torch.save(core.state_dict(), os.path.join(out_dir, '_last.t7'))
         
-if __name__ == '__main__':
+if __name__=='__main__':
     train()

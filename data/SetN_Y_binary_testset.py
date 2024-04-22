@@ -40,18 +40,31 @@ class SetN_Y_binary_testset(Dataset):
         return self.N
 
     def __getitem__(self, idx):
-        im_file_name = self.root + 'im_' + str(idx)
-        data = np.fromfile(im_file_name, dtype=np.float32)
+        try:
+            im_file_name = self.root + f'im_{idx}.npy'
+            data = np.load(im_file_name)
+        except: 
+            im_file_name = self.root + f'im_{idx}'
+            data = np.fromfile(im_file_name, dtype=np.float32)
+        
+        data = data.astype(np.float32)
         imw = data[0].astype(np.int32)
         imh = data[1].astype(np.int32)
+        
         im_data = np.reshape(data[2:], [1, imh, imw])
         x = im_data
         
-        gt_file_name = self.root + 'gt_' + str(idx)
-        data = np.fromfile(gt_file_name, dtype=np.float32)
-        gtw = data[0].astype(np.int32)
-        gth = data[1].astype(np.int32)
-        gt_data = np.reshape(data[2:], [1, gth, gtw])
+        try:
+            gt_file_name = self.root + f'gt_{idx}.npy'
+            gt = np.load(gt_file_name)
+        except:
+            gt_file_name = self.root + f'gt_{idx}'
+            gt = np.fromfile(gt_file_name, dtype=np.float32)
+            
+        gt = gt.astype(np.float32)
+        gtw = gt[0].astype(np.int32)
+        gth = gt[1].astype(np.int32)
+        gt_data = np.reshape(gt[2:], [1, gth, gtw])
         y = gt_data
         
         return x, y

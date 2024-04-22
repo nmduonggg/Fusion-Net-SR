@@ -9,7 +9,7 @@ import math
 class SuperNet_share(nn.Module):
     def __init__(self, scale: int=2, tile:int=2):
         super(SuperNet_share, self).__init__()
-
+        
         self.tile = tile
         self.scale = scale
         inp_channel = 1

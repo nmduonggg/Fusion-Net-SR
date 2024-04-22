@@ -28,14 +28,14 @@ if args.template is not None:
 # load test data
 print('[INFO] load testset "%s" from %s' % (args.testset_tag, args.testset_dir))
 testset, batch_size_test = data.load_testset(args)
-XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=0)
+XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=16)
 
 # model
 arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    args.weight = os.path.join(args.cv_dir, "SUPERNET_KUL", args.template+f'nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', '_last.t7')
+    args.weight = os.path.join(args.cv_dir, "SUPERNET_SHARE", args.template+f'_nblock{args.nblocks}_lbda{args.lbda}_gamma{args.gamma}_den{args.den_target}', '_best_wunc.t7')
     # args.weight='/mnt/disk1/nmduong/FusionNet/fusion-net/checkpoints/SUPERNET_KUL/SuperNet_kulnblock-1_lbda0.0_gamma0.2_den0.7/_last.t7'
     print(f"[INFO] Load weight from {args.weight}")
     core.load_state_dict(torch.load(args.weight))
@@ -73,9 +73,7 @@ def process_unc_map(masks, to_heatmap=True, rescale=True, abs=True):
     apply sigmoid and rescale
     """      
     masks = torch.stack(masks, dim=0)
-    if abs: 
-        # masks = masks.abs()
-        masks = torch.exp(masks)
+    if abs: masks = masks.abs()
     
     pmin = torch.min(masks)
     pmax = torch.max(masks)
@@ -84,8 +82,6 @@ def process_unc_map(masks, to_heatmap=True, rescale=True, abs=True):
     for i in range(4):
         # mask = torch.abs(mask)
         mask = masks[i, ...]
-        pmin = torch.min(mask)    
-        pmax = torch.max(mask)
         
         # print(f'Mask {i}:', torch.mean(mask))
         if rescale:
@@ -108,9 +104,10 @@ def visualize_unc_map(masks, id, val_perfs):
     os.makedirs(new_out_dir, exist_ok=True)
     save_file = os.path.join(new_out_dir, f"img_{id}_mask.jpeg")
     
-    # masks_np = process_unc_map(masks, False, False, False)
-    # masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
+    masks_np = process_unc_map(masks, False, False, False)
+    masks_np_percentile = [(m > np.percentile(m, 75)) for m in masks_np]
     masks_np_percentile = process_unc_map(masks)
+    # mask_np_percentile = (mask[mask_np_percentile[i]] for i, mask in enumerate(masks_np))
     
     fig, axs = plt.subplots(1, len(masks_np_percentile), 
                             tight_layout=True, figsize=(60, 20))
@@ -257,7 +254,6 @@ def visualize_error_map(yfs, yt, id):
 # testing
 
 t = 5e-3
-psnr_unc_map = np.ones((len(XYtest), 12))
 
 def test():
     perfs_val = [0, 0, 0, 0]
@@ -278,11 +274,9 @@ def test():
             out = core(x)
         
         yfs, masks = out
-        
-        if args.visualize:
-            visualize_histogram_im(masks, batch_idx)
-            visualize_error_map(yfs, yt, batch_idx)
-            get_error_btw_F(yfs, batch_idx)
+        visualize_histogram_im(masks, batch_idx)
+        visualize_error_map(yfs, yt, batch_idx)
+        get_error_btw_F(yfs, batch_idx)
         
         val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / 4
 
@@ -290,22 +284,13 @@ def test():
         # mask_loss = F.binary_cross_entropy_with_logits(masks, error_maps)
             
         perf_v_layers = [evaluation.calculate(args, yf, yt) for yf in yfs]
-        unc_v_layers = [m.mean().cpu().item() for m in masks]
-        error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
-        
-        psnr_unc_map[batch_idx, :] = np.array([x for x in zip(perf_v_layers, error_v_layers, unc_v_layers)]).reshape(-1)
-        
-        if args.visualize:
-            visualize_unc_map(masks, batch_idx, perf_v_layers)
+        visualize_unc_map(masks, batch_idx, perf_v_layers)
         # print(f'{batch_idx}: ', perf_v_layers)
         for i, p in enumerate(perf_v_layers):
             perfs_val[i] = perfs_val[i] + p
             uncertainty_val[i] = uncertainty_val[i] + torch.exp(masks[i]).contiguous().cpu().mean()
         total_val_loss += val_loss
         # total_mask_loss += mask_loss
-        
-    np_fn = os.path.join(out_dir, 'psn_unc.npy')
-    np.save(np_fn, psnr_unc_map)
 
     perfs_val = [p / len(XYtest) for p in perfs_val]
     print(perfs_val)

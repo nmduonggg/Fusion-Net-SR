@@ -19,8 +19,8 @@ import utils
 from option import parser
 from template import test_baseline_t as template
 
-# device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cpu'
+device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+# device = 'cpu'
 print(device)
 args = parser.parse_args()
 
